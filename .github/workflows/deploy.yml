@@ -1,0 +1,81 @@
+name: Deploy
+
+# Runs after CI succeeds on main. Uses Workload Identity Federation: no long-lived JSON keys.
+# Required repo variables: GCP_PROJECT_ID, GCP_REGION, GCP_WIF_PROVIDER, GCP_DEPLOY_SA, AR_REPO
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+env:
+  IMAGE: ${{ vars.GCP_REGION }}-docker.pkg.dev/${{ vars.GCP_PROJECT_ID }}/${{ vars.AR_REPO }}/advanced-rag
+  SERVICE: advanced-rag-api
+  JOB: arxiv-reindex
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ vars.GCP_WIF_PROVIDER }}
+          service_account: ${{ vars.GCP_DEPLOY_SA }}
+      - uses: google-github-actions/setup-gcloud@v2
+
+      - name: Build and push image
+        run: |
+          SHA="${{ github.event.workflow_run.head_sha || github.sha }}"
+          gcloud auth configure-docker "${{ vars.GCP_REGION }}-docker.pkg.dev" --quiet
+          docker build -t "$IMAGE:$SHA" -t "$IMAGE:latest" .
+          docker push "$IMAGE:$SHA"
+          docker push "$IMAGE:latest"
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Deploy API (Cloud Run service)
+        run: |
+          gcloud run deploy "$SERVICE" \
+            --image "$IMAGE:$SHA" \
+            --region "${{ vars.GCP_REGION }}" \
+            --service-account "rag-runtime@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --memory 2Gi --cpu 2 --cpu-boost \
+            --min-instances 0 --max-instances 2 \
+            --timeout 120 --concurrency 4 \
+            --allow-unauthenticated \
+            --set-secrets "GROQ_API_KEY=groq-api-key:latest,QDRANT_URL=qdrant-url:latest,QDRANT_API_KEY=qdrant-api-key:latest,INGEST_API_KEY=ingest-api-key:latest"
+
+      - name: Update re-index Job to the same image
+        run: |
+          gcloud run jobs update "$JOB" \
+            --image "$IMAGE:$SHA" \
+            --region "${{ vars.GCP_REGION }}" || \
+          gcloud run jobs create "$JOB" \
+            --image "$IMAGE:$SHA" \
+            --region "${{ vars.GCP_REGION }}" \
+            --service-account "rag-runtime@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --memory 2Gi --cpu 2 \
+            --task-timeout 3600 --max-retries 1 \
+            --command python --args=-m,jobs.reindex_job \
+            --set-secrets "GROQ_API_KEY=groq-api-key:latest,QDRANT_URL=qdrant-url:latest,QDRANT_API_KEY=qdrant-api-key:latest"
+
+      - name: Smoke test
+        run: |
+          URL=$(gcloud run services describe "$SERVICE" --region "${{ vars.GCP_REGION }}" --format 'value(status.url)')
+          curl --fail --retry 5 --retry-delay 5 --retry-all-errors "$URL/health"
+          curl --fail "$URL/ready"

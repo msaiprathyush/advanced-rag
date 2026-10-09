@@ -1,0 +1,69 @@
+name: Eval
+
+# Retrieval ablation (no LLM) + RAGAS gate against a hermetic index built from the pinned papers.
+# Needs the GROQ_API_KEY repo secret, so PRs from forks (no secrets) will skip the RAGAS step.
+
+on:
+  pull_request:
+    paths: ["src/**", "evals/**", "pyproject.toml", "uv.lock"]
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: eval-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Force embedded local Qdrant: the eval never touches the production cluster.
+  QDRANT_URL: ""
+  QDRANT_API_KEY: ""
+  QDRANT_LOCAL_PATH: .qdrant_eval
+  FASTEMBED_CACHE_PATH: .cache/fastembed
+  LOG_JSON: "true"
+
+jobs:
+  eval:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+
+      - name: Cache ONNX models
+        uses: actions/cache@v4
+        with:
+          path: .cache/fastembed
+          key: fastembed-bge-small-bm25-minilm-v1
+
+      # PDFs are cached by the pinned list, so arXiv is only contacted when the list changes.
+      - name: Cache pinned-paper PDFs
+        uses: actions/cache@v4
+        with:
+          path: .cache/pdfs
+          key: pdfs-${{ hashFiles('evals/pinned_papers.txt') }}
+
+      - name: Build hermetic eval index
+        run: uv run python -m advanced_rag.ingestion --ids-file evals/pinned_papers.txt
+
+      - name: Retrieval ablation (no LLM)
+        run: |
+          uv run python -m advanced_rag.eval.retrieval_eval | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: RAGAS + threshold gate
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: uv run python -m advanced_rag.eval.ragas_eval
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-reports-${{ github.sha }}
+          path: evals/reports/

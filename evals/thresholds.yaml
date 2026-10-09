@@ -1,0 +1,6 @@
+# CI gate floors for `python -m advanced_rag.eval.ragas_eval`.
+# Placeholders: set from the first real run (leave ~0.05-0.10 headroom below observed scores).
+decline_rate_unanswerable: 0.8
+false_decline_rate_answerable: 0.2   # a MAXIMUM, not a minimum
+faithfulness: 0.75
+context_recall: 0.65

@@ -1,0 +1,61 @@
+from langchain_core.messages import HumanMessage, SystemMessage
+
+from advanced_rag.retrieval.retriever import RetrievedChunk
+
+ANSWER_SYSTEM = """You are a research assistant answering questions about ML/AI papers.
+Rules:
+- Use ONLY the numbered context blocks below. Do not use outside knowledge.
+- Put a citation like [1] or [2][3] after every claim, using the block numbers.
+  Use ONLY plain ASCII square brackets with the bare number. Never use 【】, †, or line ranges.
+- If the context does not contain enough information, reply exactly: "I don't have enough information in the indexed papers to answer that."
+- Be concise and precise."""
+
+REWRITE_SYSTEM = """You rewrite search queries for retrieval over arXiv ML/AI paper text.
+Return ONE improved query only: keyword-rich, using the terminology papers would use.
+It must differ from the previous queries. No explanation, no quotes."""
+
+GROUNDEDNESS_SYSTEM = """You are a strict fact-checker. Given CONTEXT blocks and an ANSWER, decide whether
+every factual claim in the ANSWER is supported by the CONTEXT.
+- grounded=true only if all claims are supported.
+- List each unsupported claim in unsupported_claims.
+- An answer saying the information is not available counts as grounded."""
+
+DECLINE_TEXT = "I don't have enough information in the indexed papers to answer that."
+
+
+def format_context(chunks: list[RetrievedChunk]) -> str:
+    blocks = []
+    for i, c in enumerate(chunks, 1):
+        p = c.payload
+        blocks.append(f"[{i}] ({p['title']}, {p['section']})\n{p['text']}")
+    return "\n\n".join(blocks)
+
+
+def answer_messages(
+    question: str, chunks: list[RetrievedChunk], unsupported: list[str] | None = None
+) -> list:
+    extra = ""
+    if unsupported:
+        claims = "\n".join(f"- {u}" for u in unsupported)
+        extra = (
+            f"\n\nYour previous draft contained unsupported claims. Do NOT repeat them:\n{claims}"
+        )
+    return [
+        SystemMessage(ANSWER_SYSTEM + extra),
+        HumanMessage(f"Context:\n{format_context(chunks)}\n\nQuestion: {question}"),
+    ]
+
+
+def rewrite_messages(question: str, previous: list[str]) -> list:
+    prev = "\n".join(f"- {q}" for q in previous)
+    return [
+        SystemMessage(REWRITE_SYSTEM),
+        HumanMessage(f"Original question: {question}\nPrevious queries:\n{prev}"),
+    ]
+
+
+def groundedness_messages(answer: str, chunks: list[RetrievedChunk]) -> list:
+    return [
+        SystemMessage(GROUNDEDNESS_SYSTEM),
+        HumanMessage(f"CONTEXT:\n{format_context(chunks)}\n\nANSWER:\n{answer}"),
+    ]
