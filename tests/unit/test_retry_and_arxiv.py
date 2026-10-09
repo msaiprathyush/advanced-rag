@@ -70,3 +70,14 @@ def test_arxiv_gives_up_after_attempts():
     client = ArxivClient(http=httpx.Client(), throttle=Throttle(0))
     with pytest.raises(httpx.HTTPStatusError):  # 404 is not retryable -> immediate failure
         client.search("x")
+
+
+@respx.mock
+def test_unwritable_pdf_cache_does_not_fail_the_fetch(tmp_path):
+    respx.get("https://export.arxiv.org/pdf/2310.11511").mock(
+        return_value=httpx.Response(200, content=b"%PDF-1.4 fake")
+    )
+    blocker = tmp_path / "file"
+    blocker.write_text("x")  # a *file* where the cache dir should go -> mkdir raises OSError
+    client = ArxivClient(http=httpx.Client(), throttle=Throttle(0), pdf_cache_dir=blocker / "cache")
+    assert client.fetch_pdf("2310.11511").startswith(b"%PDF")

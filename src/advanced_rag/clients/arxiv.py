@@ -146,6 +146,9 @@ class ArxivClient:
         if not data.startswith(b"%PDF"):
             raise ArxivAPIError(f"Response for {vid} is not a PDF")
         if cached:
-            cached.parent.mkdir(parents=True, exist_ok=True)
-            cached.write_bytes(data)
+            try:
+                cached.parent.mkdir(parents=True, exist_ok=True)
+                cached.write_bytes(data)
+            except OSError as exc:  # a cache is an optimisation; never fail ingestion over it
+                log.warning("pdf_cache_write_failed", error=type(exc).__name__)
         return data

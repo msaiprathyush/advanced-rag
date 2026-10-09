@@ -75,7 +75,7 @@ def run() -> int:
     t0 = time.perf_counter()
     client = store.get_client()
     store.ensure_collection(client)
-    arxiv = ArxivClient(pdf_cache_dir=".cache/pdfs")
+    arxiv = ArxivClient(pdf_cache_dir=s.pdf_cache_dir)
 
     pinned = read_pinned(s.pinned_papers_file)
     metas = arxiv.get_by_ids(pinned) if pinned else []

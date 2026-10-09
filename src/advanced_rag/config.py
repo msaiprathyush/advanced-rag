@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     )
     arxiv_delay_s: float = 3.0
     arxiv_user_agent: str = "advanced-rag/0.1 (+https://github.com/msaiprathyush/advanced-rag)"
+    pdf_cache_dir: str | None = (
+        None  # opt-in disk cache; Cloud Run is stateless and /app is read-only
+    )
     reindex_max_new: int = 40  # ~40 s/paper to embed on CPU -> ~30 min, inside the 1 h job timeout
     max_papers_in_index: int = 1500
     pinned_papers_file: str = "evals/pinned_papers.txt"
