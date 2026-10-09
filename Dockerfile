@@ -35,10 +35,12 @@ COPY src ./src
 COPY jobs ./jobs
 COPY evals/pinned_papers.txt ./evals/pinned_papers.txt
 
+# NOTE: do not set HF_HUB_OFFLINE=1 here. fastembed's Qdrant/bm25 loader fails with it even when the
+# model is baked into FASTEMBED_CACHE_PATH (reproduced locally); without it the baked cache is used
+# and nothing is re-downloaded.
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     FASTEMBED_CACHE_PATH=/models \
-    HF_HUB_OFFLINE=1 \
     LOG_JSON=true \
     PORT=8080
 USER app
