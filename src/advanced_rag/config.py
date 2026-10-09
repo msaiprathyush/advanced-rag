@@ -58,7 +58,9 @@ class Settings(BaseSettings):
     # --- Logging / API ---
     log_level: str = "INFO"
     log_json: bool = True
-    query_rate_limit: str = "10/minute"
+    query_rate_limit: str = (
+        "3/minute"  # Groq free tier (8k tokens/min) sustains ~1-2 queries/min org-wide
+    )
 
 
 @lru_cache

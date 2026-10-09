@@ -19,3 +19,7 @@ wheels/
 data/
 evals/reports/
 evals/pdf_cache/
+
+# Local tooling that must never be committed
+google-cloud-sdk/
+google-cloud-cli-*.tar.gz

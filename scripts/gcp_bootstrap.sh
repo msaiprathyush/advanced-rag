@@ -14,18 +14,26 @@ set -euo pipefail
 : "${GITHUB_REPO:?set GITHUB_REPO, e.g. msaiprathyush/advanced-rag}"
 REGION="${REGION:-us-central1}"   # free-tier eligible region
 AR_REPO="${AR_REPO:-advanced-rag}"
-BUDGET_USD="${BUDGET_USD:-1}"
+BUDGET_AMOUNT="${BUDGET_AMOUNT:-1}"   # in the BILLING ACCOUNT's currency (see below)
 
 gcloud config set project "$PROJECT_ID" >/dev/null
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 
-echo "==> Budget alert (\$${BUDGET_USD}) -- the guard for the free-tier-only constraint"
-gcloud billing budgets create \
+# A budget must use the billing account's own currency or the API returns INVALID_ARGUMENT.
+CURRENCY="$(gcloud billing accounts describe "$BILLING_ACCOUNT" --format='value(currencyCode)')"
+if [ "$CURRENCY" = "INR" ] && [ "$BUDGET_AMOUNT" = "1" ]; then BUDGET_AMOUNT=100; fi   # ~ $1.20
+echo "==> Budget alert (${BUDGET_AMOUNT} ${CURRENCY}) -- the guard for the free-tier-only constraint"
+gcloud services enable billingbudgets.googleapis.com
+if gcloud billing budgets list --billing-account="$BILLING_ACCOUNT" --format='value(displayName)' | grep -qx "advanced-rag guard"; then
+  echo "   budget already exists"
+else
+  gcloud billing budgets create \
   --billing-account="$BILLING_ACCOUNT" \
   --display-name="advanced-rag guard" \
-  --budget-amount="${BUDGET_USD}USD" \
+  --budget-amount="${BUDGET_AMOUNT}${CURRENCY}" \
   --threshold-rule=percent=0.5 --threshold-rule=percent=1.0 \
-  --filter-projects="projects/${PROJECT_ID}" 2>/dev/null || echo "   (budget exists or lacks permission; check the console)"
+  --filter-projects="projects/${PROJECT_NUMBER}"
+fi
 
 echo "==> Enabling APIs"
 gcloud services enable run.googleapis.com artifactregistry.googleapis.com \

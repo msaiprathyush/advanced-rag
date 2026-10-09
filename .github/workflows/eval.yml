@@ -28,7 +28,8 @@ env:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Groq free tier = 8k tokens/min; a full RAGAS pass takes ~1h+, so PRs score a small subset.
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -59,7 +60,7 @@ jobs:
       - name: RAGAS + threshold gate
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: uv run python -m advanced_rag.eval.ragas_eval
+        run: uv run python -m advanced_rag.eval.ragas_eval ${{ github.event_name == 'pull_request' && '--limit 8' || '' }}
 
       - name: Upload reports
         if: always()

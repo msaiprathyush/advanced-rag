@@ -76,6 +76,7 @@ def decline_metrics(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, 
 
 
 def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, float]:
+    from langchain_groq import ChatGroq
     from ragas import EvaluationDataset, evaluate
     from ragas.embeddings.base import BaseRagasEmbeddings
     from ragas.llms import LangchainLLMWrapper
@@ -87,7 +88,7 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
     )
     from ragas.run_config import RunConfig
 
-    from advanced_rag.clients.llm import get_chat_model
+    from advanced_rag.config import get_settings
     from advanced_rag.embeddings.models import embed_passages, embed_query
 
     class LocalEmbeddings(BaseRagasEmbeddings):
@@ -117,7 +118,18 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
     ]
     if not samples:
         return {}
-    llm = LangchainLLMWrapper(get_chat_model("judge"))
+    cfg = get_settings()
+    # Groq free tier is 8,000 tokens/minute and one RAGAS judge prompt is 3-4k tokens, so the judge
+    # must WAIT on 429s (the SDK honours Retry-After) instead of failing the job.
+    llm = LangchainLLMWrapper(
+        ChatGroq(
+            model=cfg.judge_model,
+            api_key=cfg.groq_api_key,
+            temperature=0,
+            max_retries=12,
+            timeout=180,
+        )
+    )
     emb = LocalEmbeddings()
     result = evaluate(
         EvaluationDataset.from_list(samples),
@@ -129,11 +141,11 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
         ],
         llm=llm,
         embeddings=emb,
-        run_config=RunConfig(max_workers=2, max_retries=8, max_wait=60, timeout=180),
+        run_config=RunConfig(max_workers=1, max_retries=10, max_wait=90, timeout=400),
         raise_exceptions=False,
     )
     df = result.to_pandas()
-    scores = {}
+    scores: dict[str, float] = {"ragas_samples": len(samples)}
     for col, name in (
         ("faithfulness", "faithfulness"),
         ("answer_relevancy", "answer_relevancy"),
@@ -152,8 +164,18 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
 LOWER_IS_BETTER = {"false_decline_rate_answerable"}
 
 
+MIN_SCORED_RATIO = 0.7  # a metric must be scored on >= 70% of samples to count
+
+
 def gate(metrics: dict[str, float], thresholds: dict[str, float]) -> list[str]:
     failures = []
+    total = metrics.get("ragas_samples")
+    for name in RAGAS_METRICS:
+        n = metrics.get(f"{name}_n")
+        if total and n is not None and n < MIN_SCORED_RATIO * total:
+            failures.append(f"{name}: only {n}/{int(total)} samples scored (judge rate-limited?)")
+        elif total and n is None:
+            failures.append(f"{name}: not scored on any sample")
     for name, limit in thresholds.items():
         if name not in metrics:
             failures.append(f"{name}: not computed")
@@ -172,7 +194,7 @@ def to_markdown(metrics: dict, thresholds: dict, failures: list[str], n: int) ->
         "|---|---|---|---|",
     ]
     for k, v in metrics.items():
-        if k.endswith("_n"):
+        if k.endswith("_n") or k == "ragas_samples":
             continue
         t = thresholds.get(k)
         bad = any(f.startswith(k + ":") for f in failures)
