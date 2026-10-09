@@ -30,7 +30,7 @@ FROM python:3.12-slim AS runtime
 RUN useradd --system --create-home --uid 10001 app
 WORKDIR /app
 COPY --from=builder /app/.venv /app/.venv
-COPY --from=builder /models /models
+COPY --from=builder --chown=app:app /models /models
 COPY src ./src
 COPY jobs ./jobs
 COPY evals/pinned_papers.txt ./evals/pinned_papers.txt
