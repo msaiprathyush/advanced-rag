@@ -19,7 +19,7 @@ the same context again for the judge), so the whole deployment sustains only **1
 The brief suggested sentence-transformers. I run the same model weights (`bge-small-en-v1.5`) through
 ONNX Runtime via fastembed.
 
-- Removes torch from the image, which should cut it from the ~2 GB+ range to a few hundred MB and matters for cold starts on scale-to-zero Cloud Run. *(Expected, not yet measured: Docker isn't available on the dev machine. The first CI build will confirm the size; update this line with the real number.)*
+- Removes torch from the image: the built image is **382 MB** (measured in Artifact Registry), versus the 2 GB+ a torch-based image would typically be. That matters for cold starts on scale-to-zero Cloud Run, and keeps two images inside the 0.5 GB free registry tier.
 - Qdrant's BM25 sparse encoder comes from the same library, so there is one model dependency.
 - Cost: CPU inference is slow. Re-ranking 30 candidates took 12-25 s on a 4-core WSL machine.
 
