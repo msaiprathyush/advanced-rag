@@ -5,7 +5,9 @@ from advanced_rag.retrieval.retriever import RetrievedChunk
 
 
 class RAGState(TypedDict, total=False):
-    question: str
+    question: str  # the question used for retrieval/generation (standalone after condensing)
+    original_question: str  # what the user typed, set only when a follow-up was rewritten
+    history: list[dict]  # prior chat turns: {"role": "user"|"assistant", "content": str}
     current_query: str
     queries: list[str]  # every query tried, in order
     rewrites: int

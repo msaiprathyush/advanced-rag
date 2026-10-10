@@ -81,3 +81,35 @@ def test_unwritable_pdf_cache_does_not_fail_the_fetch(tmp_path):
     blocker.write_text("x")  # a *file* where the cache dir should go -> mkdir raises OSError
     client = ArxivClient(http=httpx.Client(), throttle=Throttle(0), pdf_cache_dir=blocker / "cache")
     assert client.fetch_pdf("2310.11511").startswith(b"%PDF")
+
+
+def _rate_limited(retry_after: str):
+    resp = httpx.Response(429, headers={"retry-after": retry_after})
+    return httpx.HTTPStatusError("x", request=httpx.Request("GET", "http://x"), response=resp)
+
+
+def test_retry_budget_fails_fast_instead_of_sleeping_through_a_long_retry_after():
+    calls = []
+
+    @with_retry("test", attempts=6, max_wait=30, max_total_s=5)
+    def flaky():
+        calls.append(1)
+        raise _rate_limited("60")  # server says wait 60 s, but the budget is 5 s
+
+    t0 = time.monotonic()
+    with pytest.raises(httpx.HTTPStatusError):
+        flaky()
+    assert len(calls) == 1 and time.monotonic() - t0 < 2  # gave up immediately, did not sleep 60 s
+
+
+def test_retry_within_budget_still_retries(monkeypatch):
+    calls = []
+
+    @with_retry("test", attempts=4, min_wait=0.01, max_wait=0.05, max_total_s=30)
+    def flaky():
+        calls.append(1)
+        if len(calls) < 3:
+            raise _rate_limited("0")
+        return "ok"
+
+    assert flaky() == "ok" and len(calls) == 3

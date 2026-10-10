@@ -45,7 +45,7 @@ class GroqLLM:
             max_concurrency or get_settings().llm_max_concurrency
         )
 
-    @with_retry("groq", attempts=6, max_wait=30)
+    @with_retry("groq", attempts=6, max_wait=30, max_total_s=get_settings().llm_max_retry_s)
     def _invoke(self, role: Role, runnable, messages: list[BaseMessage], kind: str):
         with self._sem:
             t0 = time.perf_counter()

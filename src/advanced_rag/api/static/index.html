@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Ask the arXiv papers</title>
+  <meta name="description" content="Cited answers over recent ML/AI research: hybrid retrieval, re-ranking, and a self-checking answer loop.">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="top">
+      <div>
+        <h1>Ask the arXiv papers</h1>
+        <p class="sub">Cited answers over recent ML/AI research · hybrid retrieval · self-checked</p>
+      </div>
+      <button id="new-chat" class="ghost" type="button" hidden>New chat</button>
+    </header>
+
+    <main id="thread" class="thread" aria-live="polite" aria-label="Conversation">
+      <section id="empty" class="empty">
+        <p class="hint">Try one of these</p>
+        <div class="chips">
+          <button class="chip" type="button" data-q="How does Self-RAG decide when to retrieve?">How does Self-RAG decide when to retrieve?</button>
+          <button class="chip" type="button" data-q="What does the Lost in the Middle paper find about long contexts?">What does the Lost in the Middle paper find about long contexts?</button>
+          <button class="chip" type="button" data-q="Why are cross-encoders slower than ColBERT?">Why are cross-encoders slower than ColBERT?</button>
+          <button class="chip chip-decline" type="button" data-q="What is the capital of Peru?">
+            What is the capital of Peru? <span class="tag">off-topic: watch it decline</span>
+          </button>
+        </div>
+      </section>
+    </main>
+
+    <form id="composer" class="composer" autocomplete="off">
+      <label for="q" class="sr-only">Your question</label>
+      <textarea id="q" rows="1" maxlength="1000" placeholder="Ask about retrieval, RAG, ColBERT, GraphRAG…" required></textarea>
+      <button id="send" type="submit">Ask</button>
+    </form>
+
+    <footer class="foot">
+      <a href="https://github.com/msaiprathyush/advanced-rag" target="_blank" rel="noopener noreferrer">Source on GitHub</a>
+      <span aria-hidden="true">·</span>
+      <a href="/api/docs">API</a>
+    </footer>
+  </div>
+  <script src="/static/app.js" defer></script>
+</body>
+</html>

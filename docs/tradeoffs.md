@@ -7,7 +7,8 @@ Numbers are measured on this repo's 15-paper corpus unless noted.
 
 Groq's free tier gives each model **8,000 tokens/minute, 200,000 tokens/day and 1,000 requests/day**. One query
 costs roughly 5k tokens (a ~2.5k-token context for generation, then again for the judge), so the deployment
-sustains **1-2 queries per minute and about 40 per day**.
+sustains **about 1 query per minute and roughly 50 per day**. The generator (gpt-oss-120b) and the judge (Qwen) are different
+models with separate daily budgets, which is part of why the judge moved off the generator's family.
 
 - Every Groq call goes through one client with bounded concurrency and retry that honours `Retry-After`.
 - The public API is limited to 3 queries/minute per IP.
@@ -78,7 +79,7 @@ one that looks finished. This was a real bug found when a background job was kil
 - The gate **fails when a metric was scored on too few samples**. An early run silently scored faithfulness on 2 of 30 samples because the judge was being refused; a gate that passed that would be worse than none.
 - RAGAS needed three accommodations for Groq: `strictness=1` (Groq only supports `n=1`), a small adapter over our own embedder (the LangChain wrapper's `model` attribute isn't a string), and `reasoning_effort="low"` with a larger `max_tokens` (gpt-oss spends hidden reasoning tokens from the output budget, which made faithfulness prompts fail with `LLMDidNotFinishException`).
 - The eval index is built hermetically from the pinned papers in local Qdrant, never from production.
-- Limitation: the judge (gpt-oss-20b) is the same family as the generator, which can bias faithfulness upward. A different judge family would be better.
+- The judge (Qwen 27B) is a different model family from the generator (gpt-oss), which reduces self-preference bias. In one probe it correctly rejected a draft that claimed Self-RAG "always retrieves" (the opposite of its design) while gpt-oss-120b as judge passed it. That is a single example, not a benchmark.
 - **Known flaky case (rag-2, RAG-Sequence vs RAG-Token).** The judge correctly rejects a true claim whose supporting sentence isn't in the retrieved chunks. The sentence lives in a chunk that ranks 5th, and a per-paper diversity cap of 3 can drop it. Raising the cap to 4 did not reliably help in a single comparison (the LLM is non-deterministic and the index was growing), so I did not tune to it. A larger eval set, repeated runs per setting, and parent-section retrieval are the right next steps.
 
 ## 11. Operational choices
@@ -89,3 +90,28 @@ one that looks finished. This was a real bug found when a background job was kil
 - **arXiv politeness.** One request per 3 seconds (stricter than the "3 req/s" in the brief), a descriptive User-Agent, long backoff on 429. arXiv returns `429` with no `Retry-After`, and an early version retried too fast.
 - **Licensing.** PyMuPDF is AGPL; fine for this open-source repo, a consideration for closed-source reuse.
 - **Secrets.** Never in the repo or image: local `.env` (gitignored), Secret Manager in production, Workload Identity Federation instead of JSON keys.
+
+## 12. Chat UI
+
+**Choices.** Plain HTML/CSS/JS served by the same FastAPI app: one deploy, no build step, no CDN. A strict Content-Security-Policy
+(`default-src 'self'`, no inline script or style) is possible because nothing is inline. Model output is untrusted, so every node is
+built from text and never parsed as HTML; links are restricted to `https://arxiv.org/abs|pdf/…`. The parsing helpers are pure
+functions, tested under QuickJS from pytest (no Node needed), including hostile input. Swagger moved to `/api/docs`.
+
+**Show the engineering without cluttering it.** Each answer has a collapsed "How this answer was produced" panel built from the
+graph trace: re-rank score, whether the query was rewritten, whether the self-check failed and the draft was regenerated.
+
+**Follow-ups cost a model call.** A chat thread only works if follow-ups are understood, so a follow-up is first rewritten into a
+standalone question (one extra call on the judge model, only when there is history; a failed rewrite falls back to the raw question).
+History is capped at 6 turns and 2,000 characters per turn to bound token cost.
+
+**Fail fast, not slow.** A free LLM quota can be exhausted. LLM calls have a 40 s retry budget (batch jobs raise it), and an exhausted
+quota returns a clear 503 instead of a 5-minute spinner. The UI also pre-warms the scale-to-zero instance on page load and explains
+the cold start, which can still take about a minute after long idle.
+
+## 13. Known limitation: comparison questions
+
+"How do Self-RAG and CRAG handle poor retrieval differently?" is declined. Retrieval returned CRAG's evaluation section and Self-RAG's
+introduction but not Self-RAG's method section, so the draft misdescribed Self-RAG, and the judge correctly refused to show it. Failing
+closed is the right behaviour, but comparison questions need **query decomposition** (one sub-query per entity, then merge). That is
+the next improvement, and the example questions in the UI deliberately avoid this case.

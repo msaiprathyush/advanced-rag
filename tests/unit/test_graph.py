@@ -122,3 +122,47 @@ def test_judge_failure_fails_closed_instead_of_crashing():
     llm = BrokenJudge(["Draft [1].", "Draft again [1]."], [])
     out = run(StubRetriever([3.0]), llm)
     assert out["decision"] == "declined" and out["decline_reason"] == "could_not_ground_answer"
+
+
+def test_followup_is_condensed_into_a_standalone_question_before_retrieval():
+    class CondensingLLM(FakeLLM):
+        def complete(self, role, messages):
+            if role == "judge" and "Follow-up question" in messages[-1].content:
+                self.calls.append("condense")
+                return "What are the limitations of Self-RAG?"
+            return super().complete(role, messages)
+
+    r = StubRetriever([3.0])
+    llm = CondensingLLM(["Limits are X [1]."], [True])
+    history = [
+        {"role": "user", "content": "How does Self-RAG work?"},
+        {"role": "assistant", "content": "It uses reflection tokens [1]."},
+    ]
+    out = run_graph("what are its limitations?", build_graph(r, llm, S), history=history)
+    assert r.queries[0] == "What are the limitations of Self-RAG?"  # retrieval saw the rewrite
+    assert out["question"] == "What are the limitations of Self-RAG?"
+    assert out["original_question"] == "what are its limitations?"
+    assert llm.calls[0] == "condense" and out["decision"] == "answered"
+    assert out["trace"][0]["node"] == "condense_question"
+
+
+def test_first_question_makes_no_condense_call():
+    llm = FakeLLM(["Answer [1]."], [True])
+    out = run_graph("When does Self-RAG retrieve?", build_graph(StubRetriever([3.0]), llm, S))
+    assert llm.calls == ["generate", "judge"] and "original_question" not in out
+
+
+def test_condense_failure_falls_back_to_the_raw_question():
+    class Failing(FakeLLM):
+        def complete(self, role, messages):
+            if role == "judge" and "Follow-up question" in messages[-1].content:
+                raise RuntimeError("groq down")
+            return super().complete(role, messages)
+
+    r = StubRetriever([3.0])
+    out = run_graph(
+        "what about its limits?",
+        build_graph(r, Failing(["Ok [1]."], [True]), S),
+        history=[{"role": "user", "content": "Tell me about Self-RAG"}],
+    )
+    assert r.queries[0] == "what about its limits?" and out["decision"] == "answered"

@@ -28,6 +28,7 @@ env:
   QDRANT_LOCAL_PATH: .qdrant_eval
   FASTEMBED_CACHE_PATH: .cache/fastembed
   LOG_JSON: "true"
+  LLM_MAX_RETRY_S: "900"  # batch job: wait out rate limits instead of failing fast like the API
 
 jobs:
   eval:

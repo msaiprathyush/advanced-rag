@@ -15,6 +15,7 @@ from advanced_rag.generation.citations import (
 from advanced_rag.generation.prompts import (
     DECLINE_TEXT,
     answer_messages,
+    condense_messages,
     groundedness_messages,
     rewrite_messages,
 )
@@ -37,6 +38,25 @@ def _trace(state: RAGState, node: str, t0: float, **info) -> list[dict]:
 
 
 def make_nodes(retriever: Retriever, llm: LLMClient, s: Settings) -> dict[str, Callable]:
+    def condense_question(state: RAGState) -> RAGState:
+        """Rewrite a chat follow-up into a standalone question. Only runs when there is history."""
+        t0 = time.perf_counter()
+        raw = state["question"]
+        try:
+            standalone = llm.complete("judge", condense_messages(state["history"], raw))
+            standalone = standalone.strip().strip('"')
+        except Exception as exc:  # a failed rewrite must never fail the request
+            log.warning("condense_failed", error=type(exc).__name__)
+            standalone = ""
+        if not standalone or len(standalone) > 500:
+            standalone = raw
+        return {
+            "original_question": raw,
+            "question": standalone,
+            "llm_calls": state.get("llm_calls", 0) + 1,
+            "trace": _trace(state, "condense_question", t0, standalone=standalone),
+        }
+
     def retrieve(state: RAGState) -> RAGState:
         t0 = time.perf_counter()
         query = state.get("current_query") or state["question"]
@@ -149,6 +169,7 @@ def make_nodes(retriever: Retriever, llm: LLMClient, s: Settings) -> dict[str, C
         }
 
     return {
+        "condense_question": condense_question,
         "retrieve": retrieve,
         "rewrite_query": rewrite_query,
         "generate": generate,

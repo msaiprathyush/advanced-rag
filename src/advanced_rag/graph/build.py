@@ -1,4 +1,4 @@
-"""LangGraph: retrieve -> grade (cross-encoder score) -> [rewrite loop] -> generate -> groundedness."""
+"""LangGraph: [condense follow-up] -> retrieve -> grade -> [rewrite loop] -> generate -> groundedness."""
 
 from langgraph.graph import END, START, StateGraph
 
@@ -37,7 +37,13 @@ def build_graph(
     g = StateGraph(RAGState)
     for name, fn in n.items():
         g.add_node(name, fn)
-    g.add_edge(START, "retrieve")
+    # Follow-ups are first rewritten into a standalone question; a first question skips that call.
+    g.add_conditional_edges(
+        START,
+        lambda state: "condense_question" if state.get("history") else "retrieve",
+        {"condense_question": "condense_question", "retrieve": "retrieve"},
+    )
+    g.add_edge("condense_question", "retrieve")
     g.add_conditional_edges(
         "retrieve",
         route_after_retrieve,
@@ -56,8 +62,15 @@ def build_graph(
     return g.compile()
 
 
-def run_graph(question: str, graph=None) -> RAGState:
+def run_graph(question: str, graph=None, history: list[dict] | None = None) -> RAGState:
     graph = graph or build_graph()
     return graph.invoke(
-        {"question": question, "rewrites": 0, "regenerations": 0, "llm_calls": 0, "trace": []}
+        {
+            "question": question,
+            "history": history or [],
+            "rewrites": 0,
+            "regenerations": 0,
+            "llm_calls": 0,
+            "trace": [],
+        }
     )

@@ -71,8 +71,32 @@ class wait_retry_after(wait_base):
         return self.fallback(retry_state)
 
 
+def _stop(attempts: int, max_total_s: float | None):
+    """Stop after N attempts, or when the next wait would push total time past a budget.
+
+    Interactive requests must fail fast: waiting out a 60 s Retry-After several times would leave a
+    visitor staring at a spinner for minutes. tenacity computes the upcoming sleep before it asks
+    whether to stop, so we can refuse a wait that would blow the budget.
+    """
+    by_attempts = stop_after_attempt(attempts)
+
+    def stop(rs: RetryCallState) -> bool:
+        if by_attempts(rs):
+            return True
+        if max_total_s is None:
+            return False
+        return (rs.seconds_since_start or 0.0) + rs.upcoming_sleep > max_total_s
+
+    return stop
+
+
 def with_retry(
-    service: str, *, attempts: int = 5, min_wait: float = 1.0, max_wait: float = 30.0
+    service: str,
+    *,
+    attempts: int = 5,
+    min_wait: float = 1.0,
+    max_wait: float = 30.0,
+    max_total_s: float | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     def _before_sleep(rs: RetryCallState) -> None:
         exc = rs.outcome.exception() if rs.outcome else None
@@ -92,7 +116,7 @@ def with_retry(
             min_wait=min_wait,
             max_wait=max_wait * 2,
         ),
-        stop=stop_after_attempt(attempts),
+        stop=_stop(attempts, max_total_s),
         before_sleep=_before_sleep,
         reraise=True,
     )

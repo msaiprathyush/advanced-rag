@@ -16,6 +16,7 @@ def clean_markdown(md: str) -> str:
     m = _REFS_RE.search(md)
     if m and m.start() > len(md) * 0.3:  # ignore a spurious early match (e.g. in a ToC)
         md = md[: m.start()]
+    md = re.sub(r"</?mark>", "", md)  # highlight markup the PDF extractor leaves around tokens
     md = _HYPHEN_RE.sub(r"\1\2", md)
     md = re.sub(r"[ \t]+", " ", md)
     md = re.sub(r"\n{3,}", "\n\n", md)

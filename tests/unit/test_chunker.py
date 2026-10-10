@@ -59,3 +59,7 @@ def test_oversized_pdf_falls_back_to_abstract_only(monkeypatch):
     finally:
         monkeypatch.delenv("PDF_MAX_MB")
         get_settings.cache_clear()
+
+
+def test_mark_highlight_tags_are_stripped_from_parsed_text():
+    assert "<mark>" not in clean_markdown("# A\n\nthe <mark>Retrieve</mark> token " + "x" * 50)

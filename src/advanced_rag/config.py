@@ -28,9 +28,14 @@ class Settings(BaseSettings):
 
     # --- LLMs (Groq) ---
     generator_model: str = "openai/gpt-oss-120b"
-    judge_model: str = "openai/gpt-oss-20b"
+    # A different model family from the generator (less self-preference bias in the groundedness
+    # check), with its own free daily token budget.
+    judge_model: str = "qwen/qwen3.8-27b"
     llm_max_concurrency: int = 2
     llm_timeout_s: float = 60.0
+    # Wall-clock budget for rate-limit retries on one LLM call. Interactive requests fail fast;
+    # batch jobs (evals) raise it via LLM_MAX_RETRY_S.
+    llm_max_retry_s: float = 40.0
 
     # --- Retrieval ---
     prefetch_k: int = 40

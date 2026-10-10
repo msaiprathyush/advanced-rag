@@ -31,6 +31,7 @@ dev = [
     "ruff>=0.13",
     "mypy>=1.18",
     "ipykernel>=6.30",
+    "quickjs>=1.19.4",
 ]
 eval = [
     "ragas>=0.4",
@@ -56,6 +57,10 @@ src = ["src", "tests", "jobs"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "RUF"]
 ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# The UI tests deliberately contain odd unicode (narrow no-break space, ›) as test data.
+"tests/**" = ["RUF001"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -9,6 +9,12 @@ re-indexes only when quality starts to slip. Everything runs on free tiers.
 > crash-safe ingestion, a fail-closed groundedness check, a CI quality gate, and a drift monitor
 > that triggers maintenance only when needed. Design decisions and their trade-offs are in [docs/tradeoffs.md](docs/tradeoffs.md).
 
+![The chat UI: a cited answer, source cards, and the expandable "How this answer was produced" panel showing a query rewrite](docs/ui-screenshot.png)
+
+**Try it:** open the deployed service's root URL for a simple chat page (no sign-in). Each answer links its sources and has a
+collapsed *How this answer was produced* panel showing the retrieval, rewrite and self-check steps. Follow-up questions work
+("what are its limitations?" is rewritten into a standalone question first). The API explorer is at `/api/docs`.
+
 ## Architecture
 
 ```mermaid
@@ -22,7 +28,7 @@ flowchart LR
     subgraph Serving["Serving (Cloud Run, FastAPI)"]
         U[POST /query] --> G[LangGraph<br/>self-correcting RAG]
         G <--> Q
-        G <--> L[Groq LLM<br/>generator + judge]
+        G <--> L[Groq LLMs<br/>generator + judge]
     end
 ```
 
@@ -44,7 +50,7 @@ flowchart TD
 ```
 
 - **Retrieval grading is free:** the cross-encoder score decides whether retrieval is good enough, so no LLM call is spent on it.
-- **Groundedness is checked twice:** first in code (does the answer cite valid sources at all, no LLM call), then by an LLM judge using schema-constrained output.
+- **Groundedness is checked twice:** first in code (does the answer cite valid sources at all, no LLM call), then by an LLM judge using schema-constrained output. The judge is a **different model family** from the generator (Qwen vs gpt-oss) to reduce self-preference bias.
 - **It fails closed:** if the answer can't be verified, or the judge errors, the system declines instead of returning an unchecked answer.
 
 ## What makes it more than naive RAG
@@ -67,7 +73,7 @@ flowchart TD
 uv sync                      # Python 3.12
 cp .env.example .env         # add GROQ_API_KEY; leave QDRANT_URL empty for embedded local mode
 uv run python -m advanced_rag.ingestion --ids-file evals/pinned_papers.txt   # ~15 papers, 10-15 min on CPU
-uv run python -m uvicorn advanced_rag.api.main:app --port 8000
+uv run python -m uvicorn advanced_rag.api.main:app --port 8000   # chat UI at http://localhost:8000/
 curl -s localhost:8000/query -H 'content-type: application/json' \
   -d '{"question": "How does Self-RAG decide when to retrieve?", "debug": true}'
 ```
@@ -138,7 +144,7 @@ uv run python -m jobs.drift_monitor    # canary locally; both signals when runni
 
 | Service | Free tier | How this project stays inside it |
 |---|---|---|
-| Groq | 8,000 tokens/min, 200,000 tokens/day, 1,000 requests/day per model | Retries honour `Retry-After`; API limited to 3 queries/min; ~200k tokens/day is about 40 queries; RAGAS runs on a rotating nightly subset |
+| Groq | 8,000 tokens/min, 200,000 tokens/day, 1,000 requests/day per model | Retries honour `Retry-After`; API limited to 3 queries/min; ~200k tokens/day per model is roughly 50 queries (generator and judge are separate models); RAGAS runs on a rotating nightly subset |
 | Qdrant Cloud | 1 GB | ~700 chunks for 15 papers; the re-index job evicts the oldest non-pinned papers past a cap |
 | Cloud Run | 2M requests/month, scale to zero | `min-instances 0`, `max-instances 2` |
 | Artifact Registry | 0.5 GB | Cleanup policy keeps the 2 newest images |
@@ -158,7 +164,8 @@ A $1 billing alert is created by [scripts/gcp_bootstrap.sh](scripts/gcp_bootstra
 ## Layout
 
 ```
-src/advanced_rag/  clients/ ingestion/ embeddings/ store/ retrieval/ generation/ graph/ api/ eval/
+src/advanced_rag/  clients/ ingestion/ embeddings/ store/ retrieval/ generation/ graph/ api/ eval/ monitoring/
+                   api/static/            # the chat UI: plain HTML/CSS/JS, no build step
 jobs/              reindex_job.py        # Cloud Run Job entrypoint
 evals/             eval_set.jsonl, pinned_papers.txt, thresholds.yaml
 .github/workflows/ ci.yml, eval.yml, deploy.yml

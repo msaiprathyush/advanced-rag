@@ -1,3 +1,5 @@
+import re
+
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from advanced_rag.retrieval.retriever import RetrievedChunk
@@ -13,6 +15,12 @@ Rules:
 REWRITE_SYSTEM = """You rewrite search queries for retrieval over arXiv ML/AI paper text.
 Return ONE improved query only: keyword-rich, using the terminology papers would use.
 It must differ from the previous queries. No explanation, no quotes."""
+
+CONDENSE_SYSTEM = """You turn a follow-up question into ONE standalone question using the chat history.
+- Resolve pronouns and references ("it", "that paper", "its limitations") from the history.
+- Keep the user's intent. Do NOT answer the question and do NOT add facts.
+- If the question is already standalone, return it unchanged.
+Return only the question: no explanation, no quotes."""
 
 GROUNDEDNESS_SYSTEM = """You are a strict fact-checker. Given CONTEXT blocks and an ANSWER, decide whether
 every factual claim in the ANSWER is supported by the CONTEXT.
@@ -51,6 +59,25 @@ def rewrite_messages(question: str, previous: list[str]) -> list:
     return [
         SystemMessage(REWRITE_SYSTEM),
         HumanMessage(f"Original question: {question}\nPrevious queries:\n{prev}"),
+    ]
+
+
+_CITE_MARK = re.compile(r"\[\d+\]")
+
+
+def condense_messages(history: list[dict], question: str) -> list:
+    """Chat transcript + follow-up. Old [n] markers are dropped (they refer to a previous context)
+    and assistant turns are truncated, which keeps the call cheap."""
+    lines = []
+    for turn in history[-6:]:
+        text = _CITE_MARK.sub("", turn["content"]).strip()
+        if turn["role"] == "assistant":
+            text = text[:500]
+        lines.append(f"{'User' if turn['role'] == 'user' else 'Assistant'}: {text}")
+    transcript = "\n".join(lines)
+    return [
+        SystemMessage(CONDENSE_SYSTEM),
+        HumanMessage(f"Chat history:\n{transcript}\n\nFollow-up question: {question}"),
     ]
 
 
