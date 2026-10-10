@@ -95,13 +95,30 @@ Hybrid beats dense-only. Re-ranking does not move paper-level metrics here becau
 only 15 papers, so the metric is saturated; its value shows up on larger indexes. This is stated
 rather than hidden.
 
-EVAL_RESULTS_PLACEHOLDER
+**End-to-end behaviour** (full 31-question eval set, graph run with live Groq; computed in code, no LLM judge):
+
+| metric | result |
+|---|---|
+| Unanswerable questions correctly declined | 5 / 5 (4 off-topic, 1 on-topic but absent from the corpus) |
+| Answerable questions wrongly declined | 1 / 26 |
+| LLM calls per answered query | ~2.3 (generate + groundedness judge) |
+
+The one wrong decline is a genuine retrieval-coverage case, discussed in [docs/tradeoffs.md](docs/tradeoffs.md): the
+groundedness check correctly rejected a true-but-unsupported claim instead of letting it through.
+
+**RAGAS** (faithfulness, answer relevancy, context precision, context recall) runs nightly in
+[eval.yml](.github/workflows/eval.yml) on a small rotating subset, and every metric must be scored on enough
+samples or the gate fails. Groq's free tier allows only 200k tokens per day per model, so a full RAGAS pass of the
+whole set takes several days of quota; the nightly rotation covers it in about a week. Scores are published as
+workflow artifacts and in the run summary rather than quoted here from a handful of samples.
+
+Every PR also runs a free, deterministic retrieval gate (recall and MRR floors, no LLM tokens).
 
 ## Free-tier cost and limits
 
 | Service | Free tier | How this project stays inside it |
 |---|---|---|
-| Groq | 8,000 tokens/min, 1,000 requests/day per model | Retries honour `Retry-After`; API limited to 3 queries/min; evals score a subset on PRs |
+| Groq | 8,000 tokens/min, 200,000 tokens/day, 1,000 requests/day per model | Retries honour `Retry-After`; API limited to 3 queries/min; ~200k tokens/day is about 40 queries; RAGAS runs on a rotating nightly subset |
 | Qdrant Cloud | 1 GB | ~700 chunks for 15 papers; the re-index job evicts the oldest non-pinned papers past a cap |
 | Cloud Run | 2M requests/month, scale to zero | `min-instances 0`, `max-instances 2` |
 | Artifact Registry | 0.5 GB | Cleanup policy keeps the 2 newest images |

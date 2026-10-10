@@ -5,13 +5,13 @@ Numbers are measured on this repo's 15-paper corpus unless noted.
 
 ## 1. Free-tier LLM capacity is the real constraint
 
-Groq's free tier gives **8,000 tokens/minute and 1,000 requests/day per model**, for every text model
-available to the account. One query is roughly 5k tokens (a ~2.5k-token context for generation, then
-the same context again for the judge), so the whole deployment sustains only **1-2 queries per minute**.
+Groq's free tier gives each model **8,000 tokens/minute, 200,000 tokens/day and 1,000 requests/day**. One query
+costs roughly 5k tokens (a ~2.5k-token context for generation, then again for the judge), so the deployment
+sustains **1-2 queries per minute and about 40 per day**.
 
 - Every Groq call goes through one client with bounded concurrency and retry that honours `Retry-After`.
 - The public API is limited to 3 queries/minute per IP.
-- Evaluation scores a subset on pull requests and the full set nightly. A full RAGAS pass is ~1 hour of wall-clock time purely from the token limit.
+- The daily cap shaped the eval design (section 10): an early RAGAS run exhausted a model's whole daily budget, after which every judge call was refused no matter how patiently it retried. Per-minute limits can be waited out; a daily cap cannot.
 - **At scale:** a paid tier or a self-hosted model removes this. The graph and clients don't change.
 
 ## 2. ONNX (fastembed) instead of sentence-transformers + torch
@@ -73,11 +73,13 @@ one that looks finished. This was a real bug found when a background job was kil
 ## 10. Eval design
 
 - A fixed hand-written set: 26 answerable questions with paraphrased reference answers, plus 5 unanswerable ones (4 off-topic, 1 on-topic but absent).
+- **Two tiers, because of the token cap (section 1).** Every PR runs a deterministic retrieval gate (recall and MRR floors) that costs no LLM tokens. RAGAS runs nightly on a small rotating subset so a week covers the whole set.
 - Decline metrics (decline rate on unanswerable, false-decline rate on answerable) are computed in code, with no LLM judge.
-- The gate **fails when a metric was scored on too few samples**. An early full run silently scored faithfulness on 2 of 30 samples because the judge was rate-limited; a gate that passed that would be worse than none.
+- The gate **fails when a metric was scored on too few samples**. An early run silently scored faithfulness on 2 of 30 samples because the judge was being refused; a gate that passed that would be worse than none.
+- RAGAS needed three accommodations for Groq: `strictness=1` (Groq only supports `n=1`), a small adapter over our own embedder (the LangChain wrapper's `model` attribute isn't a string), and `reasoning_effort="low"` with a larger `max_tokens` (gpt-oss spends hidden reasoning tokens from the output budget, which made faithfulness prompts fail with `LLMDidNotFinishException`).
 - The eval index is built hermetically from the pinned papers in local Qdrant, never from production.
-- RAGAS's `ResponseRelevancy` runs with `strictness=1` because Groq only supports `n=1`.
 - Limitation: the judge (gpt-oss-20b) is the same family as the generator, which can bias faithfulness upward. A different judge family would be better.
+- **Known flaky case (rag-2, RAG-Sequence vs RAG-Token).** The judge correctly rejects a true claim whose supporting sentence isn't in the retrieved chunks. The sentence lives in a chunk that ranks 5th, and a per-paper diversity cap of 3 can drop it. Raising the cap to 4 did not reliably help in a single comparison (the LLM is non-deterministic and the index was growing), so I did not tune to it. A larger eval set, repeated runs per setting, and parent-section retrieval are the right next steps.
 
 ## 11. Operational choices
 

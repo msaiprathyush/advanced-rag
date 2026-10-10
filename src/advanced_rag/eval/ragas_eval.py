@@ -129,6 +129,10 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
             temperature=0,
             max_retries=12,
             timeout=180,
+            # gpt-oss spends hidden reasoning tokens from the output budget; without this the
+            # faithfulness prompts hit max_tokens before finishing (LLMDidNotFinishException).
+            reasoning_effort="low",
+            max_tokens=3000,
         )
     )
     emb = LocalEmbeddings()
