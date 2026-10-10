@@ -14,6 +14,7 @@ import json
 import os
 import statistics
 import sys
+from datetime import date
 from pathlib import Path
 
 import yaml
@@ -177,6 +178,8 @@ def gate(metrics: dict[str, float], thresholds: dict[str, float]) -> list[str]:
         elif total and n is None:
             failures.append(f"{name}: not scored on any sample")
     for name, limit in thresholds.items():
+        if name.startswith("retrieval_"):
+            continue  # enforced separately by retrieval_eval --gate
         if name not in metrics:
             failures.append(f"{name}: not computed")
         elif name in LOWER_IS_BETTER and metrics[name] > limit:
@@ -207,16 +210,37 @@ def to_markdown(metrics: dict, thresholds: dict, failures: list[str], n: int) ->
     return "\n".join(lines)
 
 
+def rotating_subset(rows: list[EvalRow], k: int, day: int) -> list[EvalRow]:
+    """K answerable rows (a window that advances with `day`) plus one unanswerable row.
+
+    The Groq free tier allows 200k tokens/day per model, so each run scores a few questions and
+    consecutive days cover the full set.
+    """
+    answerable = [r for r in rows if r.answerable]
+    unanswerable = [r for r in rows if not r.answerable]
+    start = (day * k) % len(answerable)
+    window = [answerable[(start + i) % len(answerable)] for i in range(min(k, len(answerable)))]
+    return window + ([unanswerable[day % len(unanswerable)]] if unanswerable else [])
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument(
+        "--rotate",
+        type=int,
+        default=None,
+        help="score K answerable rows, advancing daily so a week covers the whole set",
+    )
     ap.add_argument("--no-gate", action="store_true")
     ap.add_argument("--skip-ragas", action="store_true")
     ap.add_argument("--path", default="evals/eval_set.jsonl")
     args = ap.parse_args()
 
     rows = load_eval_set(args.path)
-    if args.limit:
+    if args.rotate:
+        rows = rotating_subset(rows, args.rotate, date.today().toordinal())
+    elif args.limit:
         answerable = [r for r in rows if r.answerable][: args.limit]
         rows = answerable + [r for r in rows if not r.answerable][: max(1, args.limit // 5)]
     results = run_graph_rows(rows, REPORTS / "answers.jsonl")

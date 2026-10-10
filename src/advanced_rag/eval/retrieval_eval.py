@@ -8,7 +8,10 @@ import argparse
 import json
 import math
 import statistics
+import sys
 from pathlib import Path
+
+import yaml
 
 from advanced_rag.eval.dataset import load_eval_set
 from advanced_rag.retrieval.retriever import Retriever
@@ -95,8 +98,20 @@ def to_markdown(report: dict) -> str:
     return "\n".join(lines)
 
 
-def main() -> None:
+def retrieval_gate(report: dict, thresholds: dict) -> list[str]:
+    """Deterministic, LLM-free quality gate on the production retrieval mode (hybrid_rerank)."""
+    r = report["results"]["hybrid_rerank"]
+    failures = []
+    for key, metric in (("retrieval_recall", "recall"), ("retrieval_mrr", "mrr")):
+        floor = thresholds.get(key)
+        if floor is not None and r[metric] < floor:
+            failures.append(f"{key}: {r[metric]} < min {floor}")
+    return failures
+
+
+def main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--gate", action="store_true", help="exit non-zero below evals/thresholds.yaml")
     ap.add_argument("--k", type=int, default=6)
     ap.add_argument("--path", default="evals/eval_set.jsonl")
     args = ap.parse_args()
@@ -107,7 +122,14 @@ def main() -> None:
     md = to_markdown(report)
     (out / "retrieval_ablation.md").write_text(md + "\n")
     print(md)
+    if args.gate:
+        path = Path("evals/thresholds.yaml")
+        failures = retrieval_gate(report, yaml.safe_load(path.read_text()) if path.exists() else {})
+        for f in failures:
+            print(f"GATE FAILED: {f}")
+        return 1 if failures else 0
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

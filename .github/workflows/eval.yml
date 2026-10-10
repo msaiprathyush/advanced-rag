@@ -1,7 +1,7 @@
 name: Eval
 
-# Retrieval ablation (no LLM) + RAGAS gate against a hermetic index built from the pinned papers.
-# Needs the GROQ_API_KEY repo secret, so PRs from forks (no secrets) will skip the RAGAS step.
+# PRs: free retrieval-quality gate against a hermetic index built from the pinned papers.
+# Nightly / manual: also RAGAS on a small rotating subset (needs the GROQ_API_KEY repo secret).
 
 on:
   pull_request:
@@ -9,6 +9,10 @@ on:
   schedule:
     - cron: "0 7 * * *"
   workflow_dispatch:
+    inputs:
+      rows:
+        description: Answerable questions to score with RAGAS (each costs ~20k judge tokens)
+        default: "4"
 
 permissions:
   contents: read
@@ -28,8 +32,7 @@ env:
 jobs:
   eval:
     runs-on: ubuntu-latest
-    # Groq free tier = 8k tokens/min; a full RAGAS pass takes ~1h+, so PRs score a small subset.
-    timeout-minutes: 180
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
@@ -53,14 +56,18 @@ jobs:
       - name: Build hermetic eval index
         run: uv run python -m advanced_rag.ingestion --ids-file evals/pinned_papers.txt
 
-      - name: Retrieval ablation (no LLM)
+      # Free and deterministic: no LLM tokens, no secrets, so it runs on every PR (including forks).
+      - name: Retrieval gate (no LLM)
         run: |
-          uv run python -m advanced_rag.eval.retrieval_eval | tee -a "$GITHUB_STEP_SUMMARY"
+          uv run python -m advanced_rag.eval.retrieval_eval --gate | tee -a "$GITHUB_STEP_SUMMARY"
 
-      - name: RAGAS + threshold gate
+      # Groq's free tier allows 200k tokens/day per model, so RAGAS scores a small rotating subset
+      # nightly (a week covers the full set) instead of running on every PR.
+      - name: RAGAS + threshold gate (rotating subset)
+        if: github.event_name != 'pull_request'
         env:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        run: uv run python -m advanced_rag.eval.ragas_eval ${{ github.event_name == 'pull_request' && '--limit 8' || '' }}
+        run: uv run python -m advanced_rag.eval.ragas_eval --rotate ${{ inputs.rows || 4 }}
 
       - name: Upload reports
         if: always()
