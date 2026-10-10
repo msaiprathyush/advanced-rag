@@ -15,7 +15,9 @@ from advanced_rag.store import qdrant as store
 
 log = get_logger(__name__)
 
-EMBED_BATCH = 64
+# 16, not 64: ONNX activation memory scales with batch size. Measured peak RSS over 10 papers was
+# 3.4 GB at 64 (OOM-killed the 2 GiB Cloud Run Job) vs 1.27 GB at 16, with flat growth.
+EMBED_BATCH = 16
 
 
 @dataclass
