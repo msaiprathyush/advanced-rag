@@ -64,12 +64,13 @@ jobs:
         run: |
           gcloud run jobs update "$JOB" \
             --image "$IMAGE:$SHA" \
+            --memory 3Gi \
             --region "${{ vars.GCP_REGION }}" || \
           gcloud run jobs create "$JOB" \
             --image "$IMAGE:$SHA" \
             --region "${{ vars.GCP_REGION }}" \
             --service-account "rag-runtime@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
-            --memory 2Gi --cpu 2 \
+            --memory 3Gi --cpu 2 \
             --task-timeout 3600 --max-retries 1 \
             --command python --args=-m,jobs.reindex_job \
             --set-secrets "GROQ_API_KEY=groq-api-key:latest,QDRANT_URL=qdrant-url:latest,QDRANT_API_KEY=qdrant-api-key:latest"

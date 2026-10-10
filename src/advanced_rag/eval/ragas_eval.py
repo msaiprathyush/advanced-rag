@@ -250,7 +250,7 @@ def main() -> int:
         metrics |= ragas_scores(rows, results)
 
     thresholds = yaml.safe_load(THRESHOLDS.read_text()) if THRESHOLDS.exists() else {}
-    failures = [] if args.no_gate else gate(metrics, thresholds)
+    failures = gate(metrics, thresholds)  # always shown; --no-gate only affects the exit code
     md = to_markdown(metrics, thresholds, failures, len(rows))
     (REPORTS / "ragas_report.json").write_text(
         json.dumps({"metrics": metrics, "failures": failures}, indent=2)
@@ -260,7 +260,7 @@ def main() -> int:
     if summary := os.environ.get("GITHUB_STEP_SUMMARY"):
         with Path(summary).open("a") as f:
             f.write(md + "\n")
-    return 1 if failures else 0
+    return 1 if failures and not args.no_gate else 0
 
 
 if __name__ == "__main__":

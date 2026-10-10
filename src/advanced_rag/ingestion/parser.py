@@ -24,11 +24,20 @@ def clean_markdown(md: str) -> str:
 
 def parse_pdf(pdf_bytes: bytes) -> str | None:
     """Return cleaned markdown, or None if the PDF can't be parsed."""
+    from advanced_rag.config import get_settings
+
+    s = get_settings()
+    if len(pdf_bytes) > s.pdf_max_mb * 1024 * 1024:
+        log.warning("pdf_too_large", size_mb=round(len(pdf_bytes) / 1024 / 1024, 1))
+        return None
     try:
         import pymupdf
         import pymupdf4llm
 
         with pymupdf.open(stream=pdf_bytes, filetype="pdf") as doc:
+            if doc.page_count > s.pdf_max_pages:
+                log.warning("pdf_too_many_pages", pages=doc.page_count, limit=s.pdf_max_pages)
+                return None
             md = pymupdf4llm.to_markdown(doc, show_progress=False)
         return clean_markdown(md) or None
     except Exception as exc:  # parser failures must not abort a batch

@@ -1,5 +1,6 @@
 """Idempotent ingestion: skip known versions, re-ingest updated ones, isolate per-paper failures."""
 
+import gc
 import time
 from dataclasses import dataclass, field
 
@@ -58,6 +59,8 @@ def _ingest_one(
         texts = [c.embed_text for c in batch]
         store.upsert_chunks(batch, embed_passages(texts), sparse_passages(texts), client)
     report.chunks += len(chunks)
+    del pdf, markdown, chunks
+    gc.collect()  # keep the long-running Job's footprint flat between papers
 
 
 def ingest_papers(

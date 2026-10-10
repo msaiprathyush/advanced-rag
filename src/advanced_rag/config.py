@@ -50,6 +50,10 @@ class Settings(BaseSettings):
     )
     arxiv_delay_s: float = 3.0
     arxiv_user_agent: str = "advanced-rag/0.1 (+https://github.com/msaiprathyush/advanced-rag)"
+    # Parsing guards: huge PDFs spike memory in the layout parser and OOM-killed the 2 GiB Job.
+    # Over-limit papers are indexed abstract-only (with a warning) instead of crashing the batch.
+    pdf_max_pages: int = 60
+    pdf_max_mb: int = 20
     pdf_cache_dir: str | None = (
         None  # opt-in disk cache; Cloud Run is stateless and /app is read-only
     )

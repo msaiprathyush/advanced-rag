@@ -46,3 +46,16 @@ def test_size_bounds_and_sequential_indices():
 
 def test_abstract_only_fallback():
     assert len(chunk_paper(META, None)) == 1
+
+
+def test_oversized_pdf_falls_back_to_abstract_only(monkeypatch):
+    from advanced_rag.config import get_settings
+    from advanced_rag.ingestion.parser import parse_pdf
+
+    monkeypatch.setenv("PDF_MAX_MB", "1")
+    get_settings.cache_clear()
+    try:
+        assert parse_pdf(b"%PDF" + b"0" * (2 * 1024 * 1024)) is None
+    finally:
+        monkeypatch.delenv("PDF_MAX_MB")
+        get_settings.cache_clear()
