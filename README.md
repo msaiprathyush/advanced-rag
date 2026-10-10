@@ -2,18 +2,18 @@
 
 A research assistant that answers questions about recent ML/AI papers **with cited sources**, using
 hybrid retrieval, cross-encoder re-ranking, and a self-correction loop that checks its own
-groundedness before answering. An automated eval suite gates changes in CI, and a scheduled job
-keeps the index current. Everything runs on free tiers.
+groundedness before answering. An automated eval suite gates changes in CI, and a drift monitor
+re-indexes only when quality starts to slip. Everything runs on free tiers.
 
 > Not a notebook demo: retries and rate-limit handling on every external call, idempotent and
-> crash-safe ingestion, a fail-closed groundedness check, a CI quality gate, and a scheduled
-> maintenance job. Design decisions and their trade-offs are in [docs/tradeoffs.md](docs/tradeoffs.md).
+> crash-safe ingestion, a fail-closed groundedness check, a CI quality gate, and a drift monitor
+> that triggers maintenance only when needed. Design decisions and their trade-offs are in [docs/tradeoffs.md](docs/tradeoffs.md).
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph Maintenance["Scheduled maintenance (Cloud Scheduler -> Cloud Run Job)"]
+    subgraph Maintenance["Drift-triggered maintenance (Cloud Run Jobs)"]
         A[arXiv API<br/>1 req / 3 s] --> P[PyMuPDF parse<br/>strip references]
         P --> C[Section-aware chunking<br/>+ contextual headers]
         C --> E[bge-small + BM25<br/>ONNX, local]
@@ -58,7 +58,8 @@ flowchart TD
 | Contextual chunk headers (title + section embedded with each chunk) | [ingestion/chunker.py](src/advanced_rag/ingestion/chunker.py) |
 | Idempotent, crash-safe ingestion | [ingestion/pipeline.py](src/advanced_rag/ingestion/pipeline.py) |
 | Automated eval with a CI gate | [eval/](src/advanced_rag/eval), [.github/workflows/eval.yml](.github/workflows/eval.yml) |
-| Scheduled re-indexing with a retention policy | [jobs/reindex_job.py](jobs/reindex_job.py) |
+| Drift monitor: re-index only when quality drifts (no LLM tokens) | [monitoring/drift.py](src/advanced_rag/monitoring/drift.py), [jobs/drift_monitor.py](jobs/drift_monitor.py) |
+| Re-index job with a retention policy | [jobs/reindex_job.py](jobs/reindex_job.py) |
 
 ## Quickstart
 
@@ -114,6 +115,25 @@ workflow artifacts and in the run summary rather than quoted here from a handful
 
 Every PR also runs a free, deterministic retrieval gate (recall and MRR floors, no LLM tokens).
 
+## Drift monitor
+
+Instead of re-indexing on a fixed timer, a cheap check runs daily and **re-indexes only if quality has drifted**.
+It uses no LLM tokens (important with Groq's daily cap):
+
+| Signal | How | Catches |
+|---|---|---|
+| Retrieval canary | The fixed eval questions through retrieval only, against the *production* index; recall and MRR floors | Index damage or regressions |
+| Live traffic | Decline rate and median top re-rank score over the last 7 days, read from Cloud Logging (needs 20+ queries) | Users asking about things the corpus no longer covers |
+
+On a breach it starts the re-index Job, unless one ran in the last 24 hours. In that case it fails loudly instead of
+looping, because drift that survives a re-index needs a human. The thresholds are initial values to tune against real
+traffic. The canary only sees pinned papers, so it cannot detect corpus staleness on its own; the live-traffic signal
+exists for that and stays silent until there is enough traffic to trust it.
+
+```bash
+uv run python -m jobs.drift_monitor    # canary locally; both signals when running on Cloud Run
+```
+
 ## Free-tier cost and limits
 
 | Service | Free tier | How this project stays inside it |
@@ -122,7 +142,7 @@ Every PR also runs a free, deterministic retrieval gate (recall and MRR floors, 
 | Qdrant Cloud | 1 GB | ~700 chunks for 15 papers; the re-index job evicts the oldest non-pinned papers past a cap |
 | Cloud Run | 2M requests/month, scale to zero | `min-instances 0`, `max-instances 2` |
 | Artifact Registry | 0.5 GB | Cleanup policy keeps the 2 newest images |
-| Cloud Scheduler | 3 jobs | Uses 1 |
+| Cloud Scheduler | 3 jobs | Uses 1 (the cheap daily drift check) |
 | arXiv API | no key | Never faster than 1 request / 3 s, descriptive User-Agent |
 
 A $1 billing alert is created by [scripts/gcp_bootstrap.sh](scripts/gcp_bootstrap.sh) before anything else.
@@ -133,7 +153,7 @@ A $1 billing alert is created by [scripts/gcp_bootstrap.sh](scripts/gcp_bootstra
    service accounts, Artifact Registry, and Workload Identity Federation (no JSON keys).
 2. Set the printed GitHub repo variables and the `GROQ_API_KEY` secret.
 3. Merging to `main` runs CI, then builds the image, deploys the Cloud Run service, updates the
-   re-index Job to the same image, and smoke-tests `/health` and `/ready`.
+   re-index and drift-monitor Jobs to the same image, and smoke-tests `/health` and `/ready`.
 
 ## Layout
 

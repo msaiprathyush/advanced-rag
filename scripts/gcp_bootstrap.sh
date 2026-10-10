@@ -74,11 +74,16 @@ SCHED="rag-scheduler@${PROJECT_ID}.iam.gserviceaccount.com"
 bind() { gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="serviceAccount:$1" --role="$2" --condition=None >/dev/null; }
 bind "$RUNTIME"  roles/secretmanager.secretAccessor
 bind "$RUNTIME"  roles/logging.logWriter
+bind "$RUNTIME"  roles/logging.viewer   # drift monitor reads /query logs
 bind "$DEPLOYER" roles/run.admin
 bind "$DEPLOYER" roles/artifactregistry.writer
 bind "$DEPLOYER" roles/secretmanager.viewer
 gcloud iam service-accounts add-iam-policy-binding "$RUNTIME" \
   --member="serviceAccount:$DEPLOYER" --role=roles/iam.serviceAccountUser >/dev/null
+
+# The drift monitor (running as rag-runtime) starts the re-index Job; grant that after the first deploy:
+#   gcloud run jobs add-iam-policy-binding arxiv-reindex --region=$REGION --member=serviceAccount:$RUNTIME --role=roles/run.invoker
+#   gcloud run jobs add-iam-policy-binding arxiv-reindex --region=$REGION --member=serviceAccount:$RUNTIME --role=roles/run.viewer
 
 echo "==> Workload Identity Federation for GitHub Actions (no JSON keys)"
 gcloud iam workload-identity-pools describe github --location=global >/dev/null 2>&1 || \
@@ -105,10 +110,11 @@ Done. Set these as GitHub *repository variables* (Settings > Secrets and variabl
   GCP_WIF_PROVIDER = ${POOL}/providers/github-oidc
 And one repository *secret* for the eval workflow:  GROQ_API_KEY
 
-After the first deploy, schedule the nightly re-index (1 of 3 free Scheduler jobs):
-  gcloud run jobs add-iam-policy-binding arxiv-reindex --region=${REGION} \\
+After the first deploy, schedule the cheap daily DRIFT CHECK (1 of 3 free Scheduler jobs). It re-indexes
+only when quality drifts; there is deliberately no daily re-index timer.
+  gcloud run jobs add-iam-policy-binding rag-drift-monitor --region=${REGION} \\
     --member=serviceAccount:${SCHED} --role=roles/run.invoker
-  gcloud scheduler jobs create http arxiv-reindex-daily --location=${REGION} --schedule="0 6 * * *" \\
-    --uri="https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/arxiv-reindex:run" \\
+  gcloud scheduler jobs create http rag-drift-monitor-daily --location=${REGION} --schedule="30 5 * * *" \\
+    --uri="https://run.googleapis.com/v2/projects/${PROJECT_ID}/locations/${REGION}/jobs/rag-drift-monitor:run" \\
     --http-method=POST --oauth-service-account-email=${SCHED}
 EOF

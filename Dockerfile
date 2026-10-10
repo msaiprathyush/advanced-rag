@@ -33,7 +33,7 @@ COPY --from=builder /app/.venv /app/.venv
 COPY --from=builder --chown=app:app /models /models
 COPY src ./src
 COPY jobs ./jobs
-COPY evals/pinned_papers.txt ./evals/pinned_papers.txt
+COPY evals/pinned_papers.txt evals/eval_set.jsonl ./evals/
 
 # NOTE: do not set HF_HUB_OFFLINE=1 here. fastembed's Qdrant/bm25 loader fails with it even when the
 # model is baked into FASTEMBED_CACHE_PATH (reproduced locally); without it the baked cache is used
@@ -46,5 +46,5 @@ ENV PATH="/app/.venv/bin:$PATH" \
 USER app
 EXPOSE 8080
 
-# The re-index Job overrides this with: python -m jobs.reindex_job
+# Jobs override this: python -m jobs.reindex_job (re-index), python -m jobs.drift_monitor (drift check)
 CMD ["sh", "-c", "exec python -m uvicorn advanced_rag.api.main:app --host 0.0.0.0 --port ${PORT}"]

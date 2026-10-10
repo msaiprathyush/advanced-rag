@@ -62,6 +62,18 @@ class Settings(BaseSettings):
     pinned_papers_file: str = "evals/pinned_papers.txt"
     api_ingest_max_results: int = 10
 
+    # --- Drift monitor (jobs/drift_monitor.py): re-index only when quality drifts ---
+    gcp_region: str = "us-central1"
+    reindex_job_name: str = "arxiv-reindex"
+    drift_min_recall: float = 0.90  # retrieval canary floors (same as the CI retrieval gate)
+    drift_min_mrr: float = 0.85
+    drift_window_days: int = 7
+    drift_min_queries: int = 20  # below this, live-traffic signals are too noisy to act on
+    drift_max_decline_rate: float = 0.35  # INITIAL values: tune against real traffic
+    drift_min_median_top_score: float = 2.0
+    drift_cooldown_hours: int = 24  # never re-index twice inside this window (prevents loops)
+    drift_dry_run: bool = False
+
     # --- Logging / API ---
     log_level: str = "INFO"
     log_json: bool = True

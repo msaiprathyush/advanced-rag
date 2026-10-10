@@ -84,6 +84,7 @@ one that looks finished. This was a real bug found when a background job was kil
 ## 11. Operational choices
 
 - **Synchronous `/ingest` is capped at 10 papers.** Cloud Run throttles CPU after a response is sent, so bulk work belongs in the Job.
+- **Drift-triggered re-indexing, not a timer.** A fixed daily re-index spends compute and arXiv requests even when nothing is wrong. A daily check that costs no LLM tokens (retrieval canary on the production index, plus decline-rate and top-score drift from request logs) re-indexes only on a breach, with a 24-hour cooldown so a persistent problem alerts a human instead of looping. Trade-offs: the thresholds are initial guesses until there is real traffic; the live-traffic signal is silent below 20 queries; and the canary can only see papers in the fixed set, so a purely stale corpus is detected by traffic or not at all. On this project's own index the canary moved when 24 papers were added (recall 1.0 to 0.981), which shows it is sensitive to real change.
 - **Retention policy.** The nightly job evicts the oldest non-pinned papers past a cap, keeping the index far below Qdrant's 1 GB.
 - **arXiv politeness.** One request per 3 seconds (stricter than the "3 req/s" in the brief), a descriptive User-Agent, long backoff on 429. arXiv returns `429` with no `Retry-After`, and an early version retried too fast.
 - **Licensing.** PyMuPDF is AGPL; fine for this open-source repo, a consideration for closed-source reuse.

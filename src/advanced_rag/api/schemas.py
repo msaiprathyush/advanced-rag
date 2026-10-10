@@ -20,6 +20,7 @@ class QueryResponse(BaseModel):
     grounded: bool | None = None
     rewrites: int = 0
     llm_calls: int = 0
+    top_score: float | None = None  # best cross-encoder score; used by the drift monitor
     latency_ms: int
     trace: list[dict] | None = None
 

@@ -75,6 +75,20 @@ jobs:
             --command python --args=-m,jobs.reindex_job \
             --set-secrets "GROQ_API_KEY=groq-api-key:latest,QDRANT_URL=qdrant-url:latest,QDRANT_API_KEY=qdrant-api-key:latest"
 
+      - name: Update drift-monitor Job to the same image
+        run: |
+          gcloud run jobs update rag-drift-monitor \
+            --image "$IMAGE:$SHA" \
+            --region "${{ vars.GCP_REGION }}" || \
+          gcloud run jobs create rag-drift-monitor \
+            --image "$IMAGE:$SHA" \
+            --region "${{ vars.GCP_REGION }}" \
+            --service-account "rag-runtime@${{ vars.GCP_PROJECT_ID }}.iam.gserviceaccount.com" \
+            --memory 2Gi --cpu 2 \
+            --task-timeout 900 --max-retries 0 \
+            --command python --args=-m,jobs.drift_monitor \
+            --set-secrets "QDRANT_URL=qdrant-url:latest,QDRANT_API_KEY=qdrant-api-key:latest"
+
       - name: Smoke test
         run: |
           URL=$(gcloud run services describe "$SERVICE" --region "${{ vars.GCP_REGION }}" --format 'value(status.url)')

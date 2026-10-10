@@ -44,10 +44,15 @@ def ndcg(ranked: list[str], gold: set[str]) -> float:
     return dcg / ideal if ideal else 0.0
 
 
-def evaluate(k: int = 6, path: str = "evals/eval_set.jsonl") -> dict:
+def evaluate(
+    k: int = 6,
+    path: str = "evals/eval_set.jsonl",
+    modes: tuple[str, ...] = MODES,
+    include_unanswerable: bool = True,
+) -> dict:
     rows = [r for r in load_eval_set(path) if r.answerable and r.gold_arxiv_ids]
     results: dict[str, dict] = {}
-    for mode in MODES:
+    for mode in modes:
         retriever = Retriever(mode)  # type: ignore[arg-type]
         per_q = {"recall": [], "mrr": [], "ndcg": []}
         top_scores: list[float] = []
@@ -66,7 +71,7 @@ def evaluate(k: int = 6, path: str = "evals/eval_set.jsonl") -> dict:
                 statistics.quantiles(top_scores, n=10)[0], 2
             )
     unanswerable = [r for r in load_eval_set(path) if not r.answerable]
-    if unanswerable:
+    if include_unanswerable and unanswerable:
         rr = Retriever("hybrid_rerank")
         scores = [rr.retrieve(r.question, k=k).top_score or 0.0 for r in unanswerable]
         results["unanswerable_top_scores"] = {
