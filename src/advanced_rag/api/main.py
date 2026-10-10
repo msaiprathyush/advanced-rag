@@ -22,6 +22,7 @@ from advanced_rag.api.schemas import (
 from advanced_rag.config import get_settings
 from advanced_rag.embeddings.models import warm_up
 from advanced_rag.logging import configure_logging, get_logger, request_id_var
+from advanced_rag.retrieval.retriever import warm_up_reranker
 
 configure_logging(get_settings().log_level, get_settings().log_json)
 log = get_logger("api")
@@ -37,7 +38,10 @@ def _graph():
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    await run_in_threadpool(warm_up)  # first request shouldn't pay model-load latency
+    # First request shouldn't pay model-load latency: load all three models at startup, where
+    # Cloud Run's startup CPU boost applies and no user is waiting.
+    await run_in_threadpool(warm_up)
+    await run_in_threadpool(warm_up_reranker)
     yield
 
 

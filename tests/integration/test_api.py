@@ -6,6 +6,7 @@ from advanced_rag.api.schemas import QueryRequest, QueryResponse
 
 def client(monkeypatch):
     monkeypatch.setattr(main, "warm_up", lambda: None)
+    monkeypatch.setattr(main, "warm_up_reranker", lambda: None)
     return TestClient(main.app)
 
 

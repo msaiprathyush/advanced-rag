@@ -127,3 +127,8 @@ class Retriever:
         ranked = rerank(query, candidates, len(candidates))
         ranked = cap_per_paper(ranked, s.max_chunks_per_paper)[:k]
         return RetrievalResult(ranked, ranked[0].rerank_score if ranked else None)
+
+
+def warm_up_reranker() -> None:
+    """Load the cross-encoder and run one inference so the first real request doesn't pay for it."""
+    rerank("warm up", [RetrievedChunk(payload={"text": "warm up", "arxiv_id": "-"}, score=0.0)], 1)

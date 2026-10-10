@@ -5,6 +5,9 @@
 retrieval_recall: 0.90
 retrieval_mrr: 0.85
 
+# INITIAL floors, not yet calibrated: only a handful of RAGAS samples have been scored so far (Groq's
+# daily token cap limits each run to a few questions). Tighten them after the first week of nightly
+# runs. Note that with ~4 answerable questions per run a single wrong decline is a 0.25 rate.
 # Checked by the nightly RAGAS run (`ragas_eval --rotate 4`). Groq's free tier allows only 200k
 # tokens/day per model, so each run scores a few questions; the run FAILS if a metric was scored on
 # too few samples rather than passing on a lucky small sample.
