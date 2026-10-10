@@ -40,6 +40,9 @@ class FakeLLM:
         self.generate_prompts: list[str] = []
 
     def complete(self, role, messages):
+        if messages[0].content.startswith("You route questions"):
+            self.calls.append("scope")  # every question is routed once, before retrieval
+            return "NO"
         if role == "judge":
             self.calls.append("rewrite")
             return self.rewrite
@@ -65,7 +68,7 @@ def test_happy_path_answers_with_citations():
     out = run(StubRetriever([3.0]), llm)
     assert out["decision"] == "answered"
     assert [c.index for c in out["citations"]] == [1]
-    assert llm.calls == ["generate", "judge"] and out["llm_calls"] == 2
+    assert llm.calls == ["scope", "generate", "judge"] and out["llm_calls"] == 3
 
 
 def test_weak_retrieval_rewrites_then_answers():
@@ -74,7 +77,7 @@ def test_weak_retrieval_rewrites_then_answers():
     out = run(r, llm)
     assert out["rewrites"] == 1 and out["decision"] == "answered"
     assert r.queries == ["When does Self-RAG retrieve?", "rewritten q"]
-    assert llm.calls[0] == "rewrite"
+    assert llm.calls[:2] == ["scope", "rewrite"]
 
 
 def test_persistently_weak_retrieval_declines_without_generating():
@@ -104,7 +107,7 @@ def test_missing_citations_fail_without_judge_call():
     llm = FakeLLM(["No citations here.", "Fixed [1]."], [True])
     out = run(StubRetriever([3.0]), llm)
     assert out["decision"] == "answered"
-    assert llm.calls == ["generate", "generate", "judge"]  # first draft rejected for free
+    assert llm.calls == ["scope", "generate", "generate", "judge"]  # draft rejected for free
 
 
 def test_model_declining_is_respected():
@@ -149,7 +152,7 @@ def test_followup_is_condensed_into_a_standalone_question_before_retrieval():
 def test_first_question_makes_no_condense_call():
     llm = FakeLLM(["Answer [1]."], [True])
     out = run_graph("When does Self-RAG retrieve?", build_graph(StubRetriever([3.0]), llm, S))
-    assert llm.calls == ["generate", "judge"] and "original_question" not in out
+    assert llm.calls == ["scope", "generate", "judge"] and "original_question" not in out
 
 
 def test_condense_failure_falls_back_to_the_raw_question():
@@ -201,7 +204,7 @@ class ScopeLLM(FakeLLM):
 
     def complete(self, role, messages):
         head = messages[0].content
-        if head.startswith("You classify a question"):
+        if head.startswith("You route questions"):
             self.calls.append("scope")
             if isinstance(self.scope_reply, Exception):
                 raise self.scope_reply
@@ -222,15 +225,16 @@ def run_meta(llm, catalog=lambda: PAPERS, score=-7.2):
 
 def test_question_about_the_collection_is_answered_from_the_catalog_not_declined():
     llm = ScopeLLM()
-    out, _ = run_meta(llm)
+    out, r = run_meta(llm)
     assert out["decision"] == "answered" and out["rewrites"] == 0
     assert (
         "**3 papers**" in out["answer"] and "2020–2026" in out["answer"]
     )  # computed, not generated
     assert "cs.CL" in out["answer"] and "Self-RAG" in out["answer"]
     assert out["citations"] == [] and out["top_score"] is None
-    assert llm.calls == ["scope", "overview"]  # no rewrite attempts, no generate/judge
-    assert [t["node"] for t in out["trace"]] == ["retrieve", "classify_scope", "corpus_overview"]
+    assert llm.calls == ["scope", "overview"]  # no retrieval, rewrites, generate or judge
+    assert [t["node"] for t in out["trace"]] == ["classify_scope", "corpus_overview"]
+    assert r.queries == []  # routed before retrieval
 
 
 def test_weak_retrieval_that_is_not_about_the_collection_still_rewrites_then_declines():
@@ -255,14 +259,13 @@ def test_overview_llm_failure_still_returns_a_useful_answer():
     assert out["decision"] == "answered" and "“Agentic AutoRAG”" in out["answer"]
 
 
-def test_good_retrieval_never_pays_for_a_scope_check():
-    llm = ScopeLLM()
-    llm.answers = ["Fine [1]."]
-    out = run_graph(
-        "When does Self-RAG retrieve?",
-        build_graph(StubRetriever([3.0]), llm, S, catalog=lambda: PAPERS),
-    )
-    assert "scope" not in llm.calls and out["decision"] == "answered"
+def test_routing_ignores_retrieval_scores():
+    # The same collection question routes to the overview even when some chunks score well,
+    # which previously sent it down the content path and summarised random papers.
+    for score in (-7.2, 6.5):
+        out, r = run_meta(ScopeLLM(), score=score)
+        assert out["decision"] == "answered" and r.queries == []
+        assert out["trace"][-1]["node"] == "corpus_overview"
 
 
 def test_overview_never_shows_a_title_the_model_invented():

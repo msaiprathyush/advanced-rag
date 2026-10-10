@@ -1,0 +1,40 @@
+{"question": "what does arXiv papers about?", "collection": true}
+{"question": "what does arXiv papers talk about", "collection": true}
+{"question": "what does arXiv papers about, what topics do they contain", "collection": true}
+{"question": "What topics do these papers cover?", "collection": true}
+{"question": "What is in your database?", "collection": true}
+{"question": "Which papers do you have?", "collection": true}
+{"question": "What can I ask you about?", "collection": true}
+{"question": "What subjects does this collection include?", "collection": true}
+{"question": "how many papers are indexed?", "collection": true}
+{"question": "what kind of research is in here", "collection": true}
+{"question": "give me an overview of the papers you know", "collection": true}
+{"question": "what areas of AI do your documents cover?", "collection": true}
+{"question": "list the papers you have", "collection": true}
+{"question": "what's this dataset about", "collection": true}
+{"question": "what do the indexed papers discuss in general?", "collection": true}
+{"question": "What time period do the papers span?", "collection": true}
+{"question": "tell me what you know about", "collection": true}
+{"question": "summarize the collection", "collection": true}
+{"question": "what are the main themes across all the papers?", "collection": true}
+{"question": "which fields or categories are these papers from?", "collection": true}
+{"question": "How does Self-RAG decide when to retrieve?", "collection": false}
+{"question": "What does the Self-RAG paper talk about?", "collection": false}
+{"question": "What topics does the RAG survey cover?", "collection": false}
+{"question": "Which papers discuss hallucination detection?", "collection": false}
+{"question": "What is late interaction in ColBERT?", "collection": false}
+{"question": "What does HyDE do?", "collection": false}
+{"question": "Summarize the GraphRAG paper", "collection": false}
+{"question": "What datasets does BEIR include?", "collection": false}
+{"question": "What is the capital of Peru?", "collection": false}
+{"question": "Who wrote the Lost in the Middle paper?", "collection": false}
+{"question": "What are the limitations of RAG?", "collection": false}
+{"question": "how do retrieval augmented models handle long context", "collection": false}
+{"question": "What is arXiv?", "collection": false}
+{"question": "Which paper introduced dense passage retrieval?", "collection": false}
+{"question": "What does the abstract of CRAG say?", "collection": false}
+{"question": "compare DPR and BM25", "collection": false}
+{"question": "What topics are covered in the Lost in the Middle paper's experiments?", "collection": false}
+{"question": "what is RAGAS used for", "collection": false}
+{"question": "Tell me about prompt injection attacks on RAG systems", "collection": false}
+{"question": "What are the main themes of the Self-RAG paper?", "collection": false}

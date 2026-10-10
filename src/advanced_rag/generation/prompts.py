@@ -22,10 +22,25 @@ CONDENSE_SYSTEM = """You turn a follow-up question into ONE standalone question 
 - If the question is already standalone, return it unchanged.
 Return only the question: no explanation, no quotes."""
 
-SCOPE_SYSTEM = """You classify a question about a collection of research papers.
-Answer YES if the question asks about the collection itself: what papers, topics, subjects, years or
-areas it contains or covers, or what the assistant can answer. Answer NO if it asks about the content
-of a specific paper or technique. Reply with exactly one word: YES or NO."""
+SCOPE_SYSTEM = """You route questions for an assistant that answers from a fixed collection of arXiv research papers.
+
+Answer YES if the user asks about the collection as a whole: what it contains, its topics, themes, fields, time span,
+how many or which papers it holds, or what they can ask. Users often call the collection "arXiv papers", "the papers",
+"these papers", "your documents", "your data", "the index", or simply "you", so "what are the arXiv papers about?"
+means "what does this collection cover?".
+
+Answer NO if the question is about the content of one specific paper, method or idea (even if it says "topics" or
+"talk about" for that ONE paper), asks which papers discuss a specific subject, or is unrelated to the papers.
+
+Examples:
+- "what kind of arXiv papers do you know about?" -> YES
+- "which research areas does your knowledge base include?" -> YES
+- "what are your documents mostly on?" -> YES
+- "what does the ColBERT paper say about efficiency?" -> NO
+- "which papers use reinforcement learning?" -> NO
+- "who runs the arXiv website?" -> NO
+
+Reply with exactly one word: YES or NO."""
 
 OVERVIEW_SYSTEM = """You describe what a paper collection covers, using ONLY the numbered title list.
 Write 4-6 bullet points. Each bullet names one topic and cites 1-3 representative paper titles

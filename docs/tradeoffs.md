@@ -116,16 +116,23 @@ introduction but not Self-RAG's method section, so the draft misdescribed Self-R
 closed is the right behaviour, but comparison questions need **query decomposition** (one sub-query per entity, then merge). That is
 the next improvement, and the example questions in the UI deliberately avoid this case.
 
-## 14. Questions about the collection itself
+## 14. Questions about the collection itself, and why routing must not depend on retrieval
 
-"What topics do these papers cover?" matches no passage, so passage retrieval scores it low and the pipeline used to decline it, which is
-the worst answer to the most natural first question. Fix: only when retrieval is weak, one tiny judge-model call asks whether the question
-is about the collection itself. If yes, answer from the index **catalog** (one abstract chunk per paper: title, year, categories) instead of
-searching passages. Normal questions never pay for the check, and it replaces wasted rewrite attempts.
+"What topics do these papers cover?" matches no passage. My first fix only checked for this when retrieval scored low, and
+that was a mistake: "what does arXiv papers about?" was declined, while "what does arXiv papers talk about" happened to match
+some chunks and got a confident summary of three random papers. **Semantically equivalent questions took different paths
+because the route depended on retrieval noise.**
 
+Now every (standalone) question is routed first by a tiny judge-model call (~400 tokens, ~0.3 s): about the collection, or
+about paper content? Collection questions are answered from the index **catalog** (one abstract chunk per paper: title, year,
+categories) and never touch passage search.
+
+- Measured on a 40-question routing set (20 collection paraphrases, 20 content questions including near-misses such as "What
+  does the Self-RAG paper talk about?"): accuracy 92.5% before the prompt change, 97.5% after, with no content question ever
+  routed to the overview. On a 16-question **held-out** set written before seeing the new prompt's results: 16/16. The few-shot
+  examples in the prompt deliberately use different wording from both sets. Both run nightly with a 90% gate.
 - The paper count, date range and categories are computed from the catalog, never generated.
 - The topic summary quotes paper titles, and every quoted title is checked against the catalog. If any is not a real title, the
   answer falls back to a plain list of real titles, so an invented paper cannot appear.
-- Limits: the summary is built from titles only (not abstracts), so topics are coarse; and the classifier is an LLM, so an unusual
-  phrasing could still be treated as a normal question and declined.
-
+- Cost: one extra small call per question. Limits: topics come from titles only (coarse); the router is an LLM, so an unusual
+  phrasing can still be misrouted (the remaining dev-set miss is the unfinished sentence "tell me what you know about").

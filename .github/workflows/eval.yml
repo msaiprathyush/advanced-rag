@@ -70,6 +70,16 @@ jobs:
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         run: uv run python -m advanced_rag.eval.ragas_eval --rotate ${{ inputs.rows || 4 }}
 
+      # Paraphrases of "what is in this collection?" must route the same way, and questions about one
+      # paper must not. Dev set + a held-out set written before tuning the prompt.
+      - name: Routing eval (collection vs content questions)
+        if: github.event_name != 'pull_request'
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          uv run python -m advanced_rag.eval.routing_eval --dataset evals/routing_set.jsonl --gate 0.9
+          uv run python -m advanced_rag.eval.routing_eval --dataset evals/routing_heldout.jsonl --gate 0.9
+
       - name: Upload reports
         if: always()
         uses: actions/upload-artifact@v4

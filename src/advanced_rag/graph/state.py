@@ -20,7 +20,6 @@ class RAGState(TypedDict, total=False):
     unsupported_claims: list[str]
     decision: Literal["answered", "declined"]
     decline_reason: str
-    scope_checked: bool  # the 'is this about the collection itself?' check has run
     scope: bool  # True when the question asks about the collection, not a paper's content
     llm_calls: int
     trace: list[dict]

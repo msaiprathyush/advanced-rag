@@ -113,7 +113,7 @@ rather than hidden.
 |---|---|
 | Unanswerable questions correctly declined | 5 / 5 (4 off-topic, 1 on-topic but absent from the corpus) |
 | Answerable questions wrongly declined | 1 / 26 |
-| LLM calls per answered query | ~2.3 (generate + groundedness judge) |
+| LLM calls per answered query | ~2.3 (generate + groundedness judge), plus 1 small routing call added later |
 
 The one wrong decline is a genuine retrieval-coverage case, discussed in [docs/tradeoffs.md](docs/tradeoffs.md): the
 groundedness check correctly rejected a true-but-unsupported claim instead of letting it through.

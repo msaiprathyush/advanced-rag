@@ -49,6 +49,12 @@ def _norm(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().rstrip(".,;:").lower())
 
 
+def is_collection_question(llm: LLMClient, question: str) -> bool:
+    """Does the question ask about the collection itself (scope, topics, papers held)?"""
+    verdict = llm.complete("judge", scope_messages(question))
+    return verdict.strip().upper().startswith("YES")
+
+
 def titles_verified(body: str, titles: list[str]) -> bool:
     """True only if every quoted title in `body` is (a prefix/part of) a real catalog title."""
     known = [_norm(t) for t in titles]
@@ -81,23 +87,21 @@ def make_nodes(
         }
 
     def classify_scope(state: RAGState) -> RAGState:
-        """Runs only when retrieval is weak: is this a question about the collection itself?
+        """Route every question: about the collection itself, or about paper content?
 
-        "What topics do these papers cover?" matches no passage, so it scores low and would be
-        declined, yet it is a natural first question. One tiny judge-model call tells the two cases
-        apart (zero cost for normal questions, and it replaces wasted rewrite attempts).
+        "What topics do these papers cover?" matches no passage, so passage search either declines it
+        or, worse, summarises whichever chunks happen to match. Routing on the question (one tiny
+        judge-model call, ~0.3 s) keeps paraphrases on the same path regardless of retrieval noise.
         """
         t0 = time.perf_counter()
         is_scope = False
         try:
-            verdict = llm.complete("judge", scope_messages(state["question"]))
-            is_scope = verdict.strip().upper().startswith("YES") and bool(
+            is_scope = is_collection_question(llm, state["question"]) and bool(
                 catalog_fn and catalog_fn()
             )
         except Exception as exc:  # a failed check just means "treat it as a normal question"
             log.warning("scope_check_failed", error=type(exc).__name__)
         return {
-            "scope_checked": True,
             "scope": is_scope,
             "llm_calls": state.get("llm_calls", 0) + 1,
             "trace": _trace(state, "classify_scope", t0, scope=is_scope),

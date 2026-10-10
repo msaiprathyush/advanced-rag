@@ -1,0 +1,16 @@
+{"question": "What are these arXiv papers on?", "collection": true}
+{"question": "what do your papers cover", "collection": true}
+{"question": "Can you describe the corpus?", "collection": true}
+{"question": "which years are the papers from?", "collection": true}
+{"question": "what kind of questions can you answer?", "collection": true}
+{"question": "what's in the index right now?", "collection": true}
+{"question": "Give me a quick rundown of all the papers.", "collection": true}
+{"question": "what research do you have access to", "collection": true}
+{"question": "What does the Atlas paper talk about?", "collection": false}
+{"question": "Which topics does GraphRAG's evaluation focus on?", "collection": false}
+{"question": "Which papers mention BM25?", "collection": false}
+{"question": "explain reciprocal rank fusion", "collection": false}
+{"question": "what is the arXiv submission process?", "collection": false}
+{"question": "how many parameters does RETRO have?", "collection": false}
+{"question": "Summarize the DPR paper's results", "collection": false}
+{"question": "what's the weather today", "collection": false}

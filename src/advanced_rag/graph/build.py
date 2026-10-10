@@ -1,4 +1,5 @@
-"""LangGraph: [condense follow-up] -> retrieve -> grade -> [scope check | rewrite loop] -> generate -> groundedness."""
+"""LangGraph: [condense follow-up] -> route (collection vs content) -> retrieve -> grade -> [rewrite loop]
+-> generate -> groundedness."""
 
 from langgraph.graph import END, START, StateGraph
 
@@ -25,16 +26,12 @@ def build_graph(
         top = state.get("top_score")
         if top is not None and top >= s.rerank_weak_threshold:
             return "generate"
-        if not state.get("scope_checked"):
-            return "classify_scope"  # maybe a question about the collection itself
         if state.get("rewrites", 0) < s.max_rewrites:
             return "rewrite_query"
         return "decline"
 
     def route_after_scope(state: RAGState) -> str:
-        if state.get("scope"):
-            return "corpus_overview"
-        return "rewrite_query" if state.get("rewrites", 0) < s.max_rewrites else "decline"
+        return "corpus_overview" if state.get("scope") else "retrieve"
 
     def route_after_grounding(state: RAGState) -> str:
         if state.get("grounded"):
@@ -49,28 +46,21 @@ def build_graph(
     # Follow-ups are first rewritten into a standalone question; a first question skips that call.
     g.add_conditional_edges(
         START,
-        lambda state: "condense_question" if state.get("history") else "retrieve",
-        {"condense_question": "condense_question", "retrieve": "retrieve"},
+        lambda state: "condense_question" if state.get("history") else "classify_scope",
+        {"condense_question": "condense_question", "classify_scope": "classify_scope"},
     )
-    g.add_edge("condense_question", "retrieve")
+    # Routing looks at the question itself, never at retrieval scores: paraphrases of the same
+    # intent must take the same path, whatever chunks happen to match.
+    g.add_edge("condense_question", "classify_scope")
     g.add_conditional_edges(
         "retrieve",
         route_after_retrieve,
-        {
-            "generate": "generate",
-            "classify_scope": "classify_scope",
-            "rewrite_query": "rewrite_query",
-            "decline": "decline",
-        },
+        {"generate": "generate", "rewrite_query": "rewrite_query", "decline": "decline"},
     )
     g.add_conditional_edges(
         "classify_scope",
         route_after_scope,
-        {
-            "corpus_overview": "corpus_overview",
-            "rewrite_query": "rewrite_query",
-            "decline": "decline",
-        },
+        {"corpus_overview": "corpus_overview", "retrieve": "retrieve"},
     )
     g.add_edge("corpus_overview", END)
     g.add_edge("rewrite_query", "retrieve")
