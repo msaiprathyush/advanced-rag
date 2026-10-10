@@ -166,3 +166,114 @@ def test_condense_failure_falls_back_to_the_raw_question():
         history=[{"role": "user", "content": "Tell me about Self-RAG"}],
     )
     assert r.queries[0] == "what about its limits?" and out["decision"] == "answered"
+
+
+# ---- questions about the collection itself ("what topics do these papers cover?") ----
+
+PAPERS = [
+    {
+        "arxiv_id": "2610.1",
+        "title": "Agentic AutoRAG",
+        "published": "2026-10-06T00:00:00Z",
+        "categories": ["cs.CL", "cs.IR"],
+    },
+    {
+        "arxiv_id": "2310.11511",
+        "title": "Self-RAG",
+        "published": "2023-10-17T00:00:00Z",
+        "categories": ["cs.CL"],
+    },
+    {
+        "arxiv_id": "2005.11401",
+        "title": "Retrieval-Augmented Generation for NLP",
+        "published": "2020-05-22T00:00:00Z",
+        "categories": ["cs.CL", "cs.LG"],
+    },
+]
+
+
+class ScopeLLM(FakeLLM):
+    """Tells the three judge-model jobs apart by their system prompt."""
+
+    def __init__(self, scope_reply="YES", overview_reply="- Retrieval: “Self-RAG”", **kw):
+        super().__init__(["unused"], [True], **kw)
+        self.scope_reply, self.overview_reply = scope_reply, overview_reply
+
+    def complete(self, role, messages):
+        head = messages[0].content
+        if head.startswith("You classify a question"):
+            self.calls.append("scope")
+            if isinstance(self.scope_reply, Exception):
+                raise self.scope_reply
+            return self.scope_reply
+        if head.startswith("You describe what a paper collection"):
+            self.calls.append("overview")
+            if isinstance(self.overview_reply, Exception):
+                raise self.overview_reply
+            return self.overview_reply
+        return super().complete(role, messages)
+
+
+def run_meta(llm, catalog=lambda: PAPERS, score=-7.2):
+    r = StubRetriever([score])
+    g = build_graph(r, llm, S, catalog=catalog)
+    return run_graph("what topics do these papers contain?", g), r
+
+
+def test_question_about_the_collection_is_answered_from_the_catalog_not_declined():
+    llm = ScopeLLM()
+    out, _ = run_meta(llm)
+    assert out["decision"] == "answered" and out["rewrites"] == 0
+    assert (
+        "**3 papers**" in out["answer"] and "2020–2026" in out["answer"]
+    )  # computed, not generated
+    assert "cs.CL" in out["answer"] and "Self-RAG" in out["answer"]
+    assert out["citations"] == [] and out["top_score"] is None
+    assert llm.calls == ["scope", "overview"]  # no rewrite attempts, no generate/judge
+    assert [t["node"] for t in out["trace"]] == ["retrieve", "classify_scope", "corpus_overview"]
+
+
+def test_weak_retrieval_that_is_not_about_the_collection_still_rewrites_then_declines():
+    llm = ScopeLLM(scope_reply="NO")
+    out, _ = run_meta(llm)
+    assert out["decision"] == "declined" and out["rewrites"] == S.max_rewrites
+    assert llm.calls.count("scope") == 1  # classified once, not again after each rewrite
+
+
+def test_scope_check_failure_falls_back_to_the_normal_flow():
+    out, _ = run_meta(ScopeLLM(scope_reply=RuntimeError("groq down")))
+    assert out["decision"] == "declined" and out["rewrites"] == S.max_rewrites
+
+
+def test_yes_with_an_empty_catalog_is_treated_as_a_normal_question():
+    out, _ = run_meta(ScopeLLM(), catalog=lambda: [])
+    assert out["decision"] == "declined"
+
+
+def test_overview_llm_failure_still_returns_a_useful_answer():
+    out, _ = run_meta(ScopeLLM(overview_reply=RuntimeError("quota")))
+    assert out["decision"] == "answered" and "“Agentic AutoRAG”" in out["answer"]
+
+
+def test_good_retrieval_never_pays_for_a_scope_check():
+    llm = ScopeLLM()
+    llm.answers = ["Fine [1]."]
+    out = run_graph(
+        "When does Self-RAG retrieve?",
+        build_graph(StubRetriever([3.0]), llm, S, catalog=lambda: PAPERS),
+    )
+    assert "scope" not in llm.calls and out["decision"] == "answered"
+
+
+def test_overview_never_shows_a_title_the_model_invented():
+    invented = "- Retrieval: “A Paper That Does Not Exist In The Index”"
+    out, _ = run_meta(ScopeLLM(overview_reply=invented))
+    assert out["decision"] == "answered"
+    assert "Does Not Exist" not in out["answer"]  # replaced by real titles from the catalog
+    assert "“Agentic AutoRAG”" in out["answer"]
+    assert out["trace"][-1]["verified"] is False
+
+
+def test_overview_with_real_titles_is_kept_and_marked_verified():
+    out, _ = run_meta(ScopeLLM(overview_reply="- RAG: “Self-RAG” and “Agentic AutoRAG”"))
+    assert "- RAG:" in out["answer"] and out["trace"][-1]["verified"] is True

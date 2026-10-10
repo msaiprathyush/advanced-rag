@@ -1,6 +1,8 @@
 """Graph nodes. Each is built by a factory so dependencies (retriever, LLM) can be injected."""
 
+import re
 import time
+from collections import Counter
 from collections.abc import Callable
 
 from pydantic import BaseModel, Field
@@ -17,7 +19,9 @@ from advanced_rag.generation.prompts import (
     answer_messages,
     condense_messages,
     groundedness_messages,
+    overview_messages,
     rewrite_messages,
+    scope_messages,
 )
 from advanced_rag.graph.state import RAGState
 from advanced_rag.logging import get_logger
@@ -37,7 +41,26 @@ def _trace(state: RAGState, node: str, t0: float, **info) -> list[dict]:
     return [*state.get("trace", []), entry]
 
 
-def make_nodes(retriever: Retriever, llm: LLMClient, s: Settings) -> dict[str, Callable]:
+OVERVIEW_MAX_TITLES = 80
+_QUOTED = re.compile(r"[\"\u201c]([^\"\u201d]{12,})[\"\u201d]")
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"\s+", " ", text.strip().rstrip(".,;:").lower())
+
+
+def titles_verified(body: str, titles: list[str]) -> bool:
+    """True only if every quoted title in `body` is (a prefix/part of) a real catalog title."""
+    known = [_norm(t) for t in titles]
+    return all(any(_norm(q) in k for k in known) for q in _QUOTED.findall(body))
+
+
+def make_nodes(
+    retriever: Retriever,
+    llm: LLMClient,
+    s: Settings,
+    catalog_fn: Callable[[], list[dict]] | None = None,
+) -> dict[str, Callable]:
     def condense_question(state: RAGState) -> RAGState:
         """Rewrite a chat follow-up into a standalone question. Only runs when there is history."""
         t0 = time.perf_counter()
@@ -55,6 +78,69 @@ def make_nodes(retriever: Retriever, llm: LLMClient, s: Settings) -> dict[str, C
             "question": standalone,
             "llm_calls": state.get("llm_calls", 0) + 1,
             "trace": _trace(state, "condense_question", t0, standalone=standalone),
+        }
+
+    def classify_scope(state: RAGState) -> RAGState:
+        """Runs only when retrieval is weak: is this a question about the collection itself?
+
+        "What topics do these papers cover?" matches no passage, so it scores low and would be
+        declined, yet it is a natural first question. One tiny judge-model call tells the two cases
+        apart (zero cost for normal questions, and it replaces wasted rewrite attempts).
+        """
+        t0 = time.perf_counter()
+        is_scope = False
+        try:
+            verdict = llm.complete("judge", scope_messages(state["question"]))
+            is_scope = verdict.strip().upper().startswith("YES") and bool(
+                catalog_fn and catalog_fn()
+            )
+        except Exception as exc:  # a failed check just means "treat it as a normal question"
+            log.warning("scope_check_failed", error=type(exc).__name__)
+        return {
+            "scope_checked": True,
+            "scope": is_scope,
+            "llm_calls": state.get("llm_calls", 0) + 1,
+            "trace": _trace(state, "classify_scope", t0, scope=is_scope),
+        }
+
+    def corpus_overview(state: RAGState) -> RAGState:
+        """Answer from the index catalog (titles, years, categories) instead of passage search."""
+        t0 = time.perf_counter()
+        papers = catalog_fn() if catalog_fn else []
+        years = sorted(p["published"][:4] for p in papers if p.get("published"))
+        cats = [
+            c for c, _ in Counter(c for p in papers for c in p.get("categories", [])).most_common(3)
+        ]
+        # Counts and date range are computed, not generated, so they cannot be hallucinated.
+        header = f"The index currently holds **{len(papers)} papers**"
+        if years:
+            header += f" (published {years[0]}\u2013{years[-1]})"
+        if cats:
+            header += f", mostly in {', '.join(cats)}"
+        header += ". Main topics:"
+        titles = [p["title"] for p in papers[:OVERVIEW_MAX_TITLES]]
+        calls = state.get("llm_calls", 0)
+        fallback = "\n".join(f"- \u201c{t}\u201d" for t in titles[:8])
+        verified = True
+        try:
+            body = llm.complete("judge", overview_messages(titles)).strip()
+            calls += 1
+            # Never show a paper title the model invented: verify, or fall back to real titles.
+            verified = bool(body) and titles_verified(body, [p["title"] for p in papers])
+            if not verified:
+                log.warning("overview_unverified_titles")
+                body = fallback
+        except Exception as exc:  # fall back to a plain list of the newest papers
+            log.warning("overview_failed", error=type(exc).__name__)
+            body = fallback
+        return {
+            "answer": f"{header}\n\n{body}",
+            "decision": "answered",
+            "citations": [],
+            "grounded": None,
+            "top_score": None,  # not a retrieval result; keep it out of the drift monitor's stats
+            "llm_calls": calls,
+            "trace": _trace(state, "corpus_overview", t0, papers=len(papers), verified=verified),
         }
 
     def retrieve(state: RAGState) -> RAGState:
@@ -170,6 +256,8 @@ def make_nodes(retriever: Retriever, llm: LLMClient, s: Settings) -> dict[str, C
 
     return {
         "condense_question": condense_question,
+        "classify_scope": classify_scope,
+        "corpus_overview": corpus_overview,
         "retrieve": retrieve,
         "rewrite_query": rewrite_query,
         "generate": generate,

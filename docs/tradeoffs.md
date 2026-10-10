@@ -115,3 +115,17 @@ the cold start, which can still take about a minute after long idle.
 introduction but not Self-RAG's method section, so the draft misdescribed Self-RAG, and the judge correctly refused to show it. Failing
 closed is the right behaviour, but comparison questions need **query decomposition** (one sub-query per entity, then merge). That is
 the next improvement, and the example questions in the UI deliberately avoid this case.
+
+## 14. Questions about the collection itself
+
+"What topics do these papers cover?" matches no passage, so passage retrieval scores it low and the pipeline used to decline it, which is
+the worst answer to the most natural first question. Fix: only when retrieval is weak, one tiny judge-model call asks whether the question
+is about the collection itself. If yes, answer from the index **catalog** (one abstract chunk per paper: title, year, categories) instead of
+searching passages. Normal questions never pay for the check, and it replaces wasted rewrite attempts.
+
+- The paper count, date range and categories are computed from the catalog, never generated.
+- The topic summary quotes paper titles, and every quoted title is checked against the catalog. If any is not a real title, the
+  answer falls back to a plain list of real titles, so an invented paper cannot appear.
+- Limits: the summary is built from titles only (not abstracts), so topics are coarse; and the classifier is an LLM, so an unusual
+  phrasing could still be treated as a normal question and declined.
+

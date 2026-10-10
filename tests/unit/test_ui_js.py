@@ -121,6 +121,19 @@ def test_steps_describe_the_pipeline_in_plain_language(js):
     assert steps[0]["quote"] == "What are Self-RAG's limitations?"
 
 
+def test_collection_questions_are_explained_and_a_no_verdict_stays_silent(js):
+    trace = [
+        {"node": "classify_scope", "ms": 200, "scope": True},
+        {"node": "corpus_overview", "ms": 900, "papers": 55},
+    ]
+    steps = js(f"buildSteps({json.dumps(trace)})")
+    assert "collection itself" in steps[0]["text"]
+    assert "55 papers" in steps[1]["text"] and steps[1]["cls"] == "good"
+    assert (
+        js(f"buildSteps({json.dumps([{'node': 'classify_scope', 'ms': 1, 'scope': False}])})") == []
+    )
+
+
 def test_failed_self_check_and_decline_are_flagged(js):
     trace = [
         {"node": "check_groundedness", "ms": 1, "verdict": False, "unsupported": 2},

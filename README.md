@@ -11,9 +11,14 @@ re-indexes only when quality starts to slip. Everything runs on free tiers.
 
 ![The chat UI: a cited answer, source cards, and the expandable "How this answer was produced" panel showing a query rewrite](docs/ui-screenshot.png)
 
-**Try it:** open the deployed service's root URL for a simple chat page (no sign-in). Each answer links its sources and has a
-collapsed *How this answer was produced* panel showing the retrieval, rewrite and self-check steps. Follow-up questions work
-("what are its limitations?" is rewritten into a standalone question first). The API explorer is at `/api/docs`.
+**[Live demo: advanced-rag-api-jkerqwdd3a-uc.a.run.app](https://advanced-rag-api-jkerqwdd3a-uc.a.run.app/)** (no sign-in).
+Each answer links its sources and has a collapsed *How this answer was produced* panel showing the retrieval, rewrite and
+self-check steps. Follow-ups work ("what are its limitations?" is rewritten into a standalone question first), and you can ask
+about the collection itself ("what topics do these papers cover?"). The API explorer is at `/api/docs`.
+
+> It runs on free tiers, so be gentle: the first request after a quiet period can take up to a minute while the server wakes
+> up, each visitor gets 3 questions a minute, and the shared free LLM quota is roughly 50 questions a day. If it says the quota
+> is busy, try again later.
 
 ## Architecture
 

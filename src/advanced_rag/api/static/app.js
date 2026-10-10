@@ -107,6 +107,13 @@ function buildSteps(trace) {
         else if (e.verdict === "judge_error") steps.push({ text: "Self-check was unavailable, so the answer failed closed", ms, cls: "bad" });
         else steps.push({ text: `Self-check failed: ${e.unsupported ?? 0} unsupported claim(s), regenerating`, ms, cls: "bad" });
         break;
+      case "classify_scope":
+        // Only worth showing when it changed the path; a "no" just continues the normal flow.
+        if (e.scope === true) steps.push({ text: "Recognised a question about the collection itself, not about one paper", ms });
+        break;
+      case "corpus_overview":
+        steps.push({ text: `Answered from the index catalog (${e.papers} papers) instead of searching passages`, ms, cls: "good" });
+        break;
       case "decline":
         steps.push({ text: "Declined instead of guessing", ms, cls: "bad" });
         break;

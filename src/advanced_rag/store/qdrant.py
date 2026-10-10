@@ -1,5 +1,6 @@
 """Qdrant access: Cloud when QDRANT_URL is set, embedded local mode otherwise."""
 
+import time
 import uuid
 from collections.abc import Iterable
 from functools import lru_cache
@@ -127,3 +128,41 @@ def delete_paper(
 def count_points(client: QdrantClient | None = None, name: str | None = None) -> int:
     client = client or get_client()
     return client.count(name or get_settings().collection, exact=True).count
+
+
+_CATALOG_TTL_S = 600
+_catalog_cache: tuple[float, list[dict]] | None = None
+
+
+def catalog(client: QdrantClient | None = None, name: str | None = None) -> list[dict]:
+    """One entry per indexed paper (arxiv_id, title, published, categories), newest first.
+
+    Read from the abstract chunk (chunk_index 0), which every fully ingested paper has exactly once.
+    Cached for a few minutes: the index only changes when the re-index job runs.
+    """
+    global _catalog_cache
+    now = time.monotonic()
+    if _catalog_cache and now - _catalog_cache[0] < _CATALOG_TTL_S:
+        return _catalog_cache[1]
+    client = client or get_client()
+    name = name or get_settings().collection
+    flt = models.Filter(
+        must=[models.FieldCondition(key="chunk_index", match=models.MatchValue(value=0))]
+    )
+    papers: list[dict] = []
+    offset = None
+    while True:
+        points, offset = client.scroll(
+            name,
+            scroll_filter=flt,
+            limit=256,
+            offset=offset,
+            with_payload=["arxiv_id", "title", "published", "categories"],
+            with_vectors=False,
+        )
+        papers += [p.payload for p in points]
+        if offset is None:
+            break
+    papers.sort(key=lambda p: p.get("published", ""), reverse=True)
+    _catalog_cache = (now, papers)
+    return papers

@@ -22,6 +22,16 @@ CONDENSE_SYSTEM = """You turn a follow-up question into ONE standalone question 
 - If the question is already standalone, return it unchanged.
 Return only the question: no explanation, no quotes."""
 
+SCOPE_SYSTEM = """You classify a question about a collection of research papers.
+Answer YES if the question asks about the collection itself: what papers, topics, subjects, years or
+areas it contains or covers, or what the assistant can answer. Answer NO if it asks about the content
+of a specific paper or technique. Reply with exactly one word: YES or NO."""
+
+OVERVIEW_SYSTEM = """You describe what a paper collection covers, using ONLY the numbered title list.
+Write 4-6 bullet points. Each bullet names one topic and cites 1-3 representative paper titles
+copied verbatim from the list, in quotes. Do not invent papers, results or claims beyond the titles.
+No introduction and no closing remarks."""
+
 GROUNDEDNESS_SYSTEM = """You are a strict fact-checker. Given CONTEXT blocks and an ANSWER, decide whether
 every factual claim in the ANSWER is supported by the CONTEXT.
 - grounded=true only if all claims are supported.
@@ -79,6 +89,15 @@ def condense_messages(history: list[dict], question: str) -> list:
         SystemMessage(CONDENSE_SYSTEM),
         HumanMessage(f"Chat history:\n{transcript}\n\nFollow-up question: {question}"),
     ]
+
+
+def scope_messages(question: str) -> list:
+    return [SystemMessage(SCOPE_SYSTEM), HumanMessage(question)]
+
+
+def overview_messages(titles: list[str]) -> list:
+    listing = "\n".join(f"{i}. {t}" for i, t in enumerate(titles, 1))
+    return [SystemMessage(OVERVIEW_SYSTEM), HumanMessage(f"Papers:\n{listing}")]
 
 
 def groundedness_messages(answer: str, chunks: list[RetrievedChunk]) -> list:

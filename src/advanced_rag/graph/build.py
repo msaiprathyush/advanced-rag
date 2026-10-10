@@ -1,4 +1,4 @@
-"""LangGraph: [condense follow-up] -> retrieve -> grade -> [rewrite loop] -> generate -> groundedness."""
+"""LangGraph: [condense follow-up] -> retrieve -> grade -> [scope check | rewrite loop] -> generate -> groundedness."""
 
 from langgraph.graph import END, START, StateGraph
 
@@ -7,25 +7,34 @@ from advanced_rag.config import Settings, get_settings
 from advanced_rag.graph.nodes import make_nodes
 from advanced_rag.graph.state import RAGState
 from advanced_rag.retrieval.retriever import Retriever
+from advanced_rag.store import qdrant as store
 
 
 def build_graph(
     retriever: Retriever | None = None,
     llm: LLMClient | None = None,
     settings: Settings | None = None,
+    catalog=None,
 ):
     s = settings or get_settings()
     retriever = retriever or Retriever("hybrid_rerank")
     llm = llm or get_llm()
-    n = make_nodes(retriever, llm, s)
+    n = make_nodes(retriever, llm, s, catalog or store.catalog)
 
     def route_after_retrieve(state: RAGState) -> str:
         top = state.get("top_score")
         if top is not None and top >= s.rerank_weak_threshold:
             return "generate"
+        if not state.get("scope_checked"):
+            return "classify_scope"  # maybe a question about the collection itself
         if state.get("rewrites", 0) < s.max_rewrites:
             return "rewrite_query"
         return "decline"
+
+    def route_after_scope(state: RAGState) -> str:
+        if state.get("scope"):
+            return "corpus_overview"
+        return "rewrite_query" if state.get("rewrites", 0) < s.max_rewrites else "decline"
 
     def route_after_grounding(state: RAGState) -> str:
         if state.get("grounded"):
@@ -47,8 +56,23 @@ def build_graph(
     g.add_conditional_edges(
         "retrieve",
         route_after_retrieve,
-        {"generate": "generate", "rewrite_query": "rewrite_query", "decline": "decline"},
+        {
+            "generate": "generate",
+            "classify_scope": "classify_scope",
+            "rewrite_query": "rewrite_query",
+            "decline": "decline",
+        },
     )
+    g.add_conditional_edges(
+        "classify_scope",
+        route_after_scope,
+        {
+            "corpus_overview": "corpus_overview",
+            "rewrite_query": "rewrite_query",
+            "decline": "decline",
+        },
+    )
+    g.add_edge("corpus_overview", END)
     g.add_edge("rewrite_query", "retrieve")
     g.add_edge("generate", "check_groundedness")
     g.add_conditional_edges(
