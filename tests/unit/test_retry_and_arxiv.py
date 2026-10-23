@@ -113,3 +113,35 @@ def test_retry_within_budget_still_retries(monkeypatch):
         return "ok"
 
     assert flaky() == "ok" and len(calls) == 3
+
+
+def test_pinned_metadata_is_cached_so_ci_makes_no_arxiv_requests(tmp_path, monkeypatch):
+    from advanced_rag.ingestion import __main__ as cli
+    from advanced_rag.ingestion.models import PaperMeta
+
+    monkeypatch.setattr(cli, "CACHE_DIR", tmp_path)
+    meta = PaperMeta("2310.11511", 1, "Self-RAG", "abs", ["A"], ["cs.CL"], "2023", "2023", "u", "p")
+
+    class FakeArxiv:
+        calls = 0
+
+        def get_by_ids(self, ids):
+            FakeArxiv.calls += 1
+            return [meta]
+
+    assert cli.cached_metadata(FakeArxiv(), ["2310.11511"]) == [meta]
+    assert cli.cached_metadata(FakeArxiv(), ["2310.11511"]) == [meta]
+    assert FakeArxiv.calls == 1  # second call served from the cache
+
+
+def test_incomplete_metadata_is_not_cached(tmp_path, monkeypatch):
+    from advanced_rag.ingestion import __main__ as cli
+
+    monkeypatch.setattr(cli, "CACHE_DIR", tmp_path)
+
+    class Partial:
+        def get_by_ids(self, ids):
+            return []  # e.g. arXiv returned nothing for one ID
+
+    cli.cached_metadata(Partial(), ["a", "b"])
+    assert list(tmp_path.glob("metadata-*.json")) == []

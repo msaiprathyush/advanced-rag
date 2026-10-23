@@ -26,6 +26,12 @@ log = get_logger("ragas_eval")
 REPORTS = Path("evals/reports")
 THRESHOLDS = Path("evals/thresholds.yaml")
 RAGAS_METRICS = ("faithfulness", "answer_relevancy", "context_precision", "context_recall")
+METRIC_COLUMNS = (
+    ("faithfulness", "faithfulness"),
+    ("answer_relevancy", "answer_relevancy"),
+    ("llm_context_precision_with_reference", "context_precision"),
+    ("context_recall", "context_recall"),
+)
 
 
 def run_graph_rows(rows: list[EvalRow], cache_path: Path) -> dict[str, dict]:
@@ -76,7 +82,9 @@ def decline_metrics(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, 
     return {k: round(v, 3) for k, v in out.items()}
 
 
-def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, float]:
+def ragas_scores(
+    rows: list[EvalRow], results: dict[str, dict]
+) -> tuple[dict[str, float], list[dict]]:
     from langchain_groq import ChatGroq
     from ragas import EvaluationDataset, evaluate
     from ragas.embeddings.base import BaseRagasEmbeddings
@@ -117,8 +125,13 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
         for r in rows
         if r.answerable and r.id in results and results[r.id]["decision"] == "answered"
     ]
+    sample_ids = [
+        r.id
+        for r in rows
+        if r.answerable and r.id in results and results[r.id]["decision"] == "answered"
+    ]
     if not samples:
-        return {}
+        return {}, []
     cfg = get_settings()
     # Groq free tier is 8,000 tokens/minute and one RAGAS judge prompt is 3-4k tokens, so the judge
     # must WAIT on 429s (the SDK honours Retry-After) instead of failing the job.
@@ -151,18 +164,22 @@ def ragas_scores(rows: list[EvalRow], results: dict[str, dict]) -> dict[str, flo
     )
     df = result.to_pandas()
     scores: dict[str, float] = {"ragas_samples": len(samples)}
-    for col, name in (
-        ("faithfulness", "faithfulness"),
-        ("answer_relevancy", "answer_relevancy"),
-        ("llm_context_precision_with_reference", "context_precision"),
-        ("context_recall", "context_recall"),
-    ):
+    for col, name in METRIC_COLUMNS:
         if col in df.columns:
             vals = df[col].dropna()
             if len(vals):
                 scores[name] = round(float(vals.mean()), 3)
                 scores[f"{name}_n"] = len(vals)
-    return scores
+    # Per-question scores make it possible to see WHICH questions drive a bad night (e.g. the
+    # multi-paper questions) and, later, to gate each question against its own history.
+    per_question = []
+    for qid, (_, row) in zip(sample_ids, df.iterrows(), strict=False):
+        entry: dict = {"id": qid}
+        for col, name in METRIC_COLUMNS:
+            if col in df.columns and row[col] == row[col]:  # skip NaN
+                entry[name] = round(float(row[col]), 3)
+        per_question.append(entry)
+    return scores, per_question
 
 
 # metrics where lower is better
@@ -250,14 +267,18 @@ def main() -> int:
     results = run_graph_rows(rows, REPORTS / "answers.jsonl")
 
     metrics = decline_metrics(rows, results)
+    per_question: list[dict] = []
     if not args.skip_ragas:
-        metrics |= ragas_scores(rows, results)
+        scores, per_question = ragas_scores(rows, results)
+        metrics |= scores
 
     thresholds = yaml.safe_load(THRESHOLDS.read_text()) if THRESHOLDS.exists() else {}
     failures = gate(metrics, thresholds)  # always shown; --no-gate only affects the exit code
     md = to_markdown(metrics, thresholds, failures, len(rows))
     (REPORTS / "ragas_report.json").write_text(
-        json.dumps({"metrics": metrics, "failures": failures}, indent=2)
+        json.dumps(
+            {"metrics": metrics, "failures": failures, "per_question": per_question}, indent=2
+        )
     )
     (REPORTS / "ragas_report.md").write_text(md + "\n")
     print(md)

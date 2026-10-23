@@ -63,3 +63,13 @@ def test_oversized_pdf_falls_back_to_abstract_only(monkeypatch):
 
 def test_mark_highlight_tags_are_stripped_from_parsed_text():
     assert "<mark>" not in clean_markdown("# A\n\nthe <mark>Retrieve</mark> token " + "x" * 50)
+
+
+def test_baked_snapshot_is_found_for_local_only_model_loading(tmp_path):
+    from advanced_rag.embeddings.models import _baked_snapshot
+
+    snap = tmp_path / "models--Qdrant--bm25" / "snapshots" / "abc123"
+    snap.mkdir(parents=True)
+    assert _baked_snapshot("Qdrant/bm25", str(tmp_path)) == str(snap)
+    assert _baked_snapshot("Qdrant/bm25", None) is None
+    assert _baked_snapshot("Qdrant/other", str(tmp_path)) is None

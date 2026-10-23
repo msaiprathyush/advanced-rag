@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 from fastembed import SparseTextEmbedding, TextEmbedding
 
@@ -17,13 +18,34 @@ class SparseVec:
 @lru_cache
 def _dense() -> TextEmbedding:
     s = get_settings()
-    return TextEmbedding(s.dense_model, cache_dir=s.fastembed_cache_path)
+    return TextEmbedding(
+        s.dense_model, cache_dir=s.fastembed_cache_path, local_files_only=s.models_local_only
+    )
+
+
+def _baked_snapshot(model: str, cache_dir: str | None) -> str | None:
+    """Path of a model snapshot baked into the image, e.g. <cache>/models--Qdrant--bm25/snapshots/<rev>."""
+    if not cache_dir:
+        return None
+    snaps = sorted(Path(cache_dir).glob(f"models--{model.replace('/', '--')}/snapshots/*"))
+    return str(snaps[-1]) if snaps else None
 
 
 @lru_cache
 def _sparse() -> SparseTextEmbedding:
     s = get_settings()
-    return SparseTextEmbedding(s.sparse_model, cache_dir=s.fastembed_cache_path)
+    kwargs = {}
+    if s.models_local_only:
+        # fastembed's local-cache check for Qdrant/bm25 requires files the Hub repo never ships
+        # (mock.file, tamil.txt), so it always falls through to the network and crashes startup when
+        # the Hub is slow. Point it straight at the baked snapshot instead.
+        kwargs["specific_model_path"] = _baked_snapshot(s.sparse_model, s.fastembed_cache_path)
+    return SparseTextEmbedding(
+        s.sparse_model,
+        cache_dir=s.fastembed_cache_path,
+        local_files_only=s.models_local_only,
+        **kwargs,
+    )
 
 
 def embed_passages(texts: list[str]) -> list[list[float]]:

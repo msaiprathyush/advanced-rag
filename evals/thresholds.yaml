@@ -5,13 +5,20 @@
 retrieval_recall: 0.90
 retrieval_mrr: 0.85
 
-# INITIAL floors, not yet calibrated: only a handful of RAGAS samples have been scored so far (Groq's
-# daily token cap limits each run to a few questions). Tighten them after the first week of nightly
-# runs. Note that with ~4 answerable questions per run a single wrong decline is a 0.25 rate.
-# Checked by the nightly RAGAS run (`ragas_eval --rotate 4`). Groq's free tier allows only 200k
-# tokens/day per model, so each run scores a few questions; the run FAILS if a metric was scored on
-# too few samples rather than passing on a lucky small sample.
+# RAGAS floors, set from 13 nightly runs (11-23 Oct 2026, 4 rotating questions each, ~52 samples):
+#   faithfulness      mean 0.92, worst night 0.71
+#   answer_relevancy  mean 0.83, worst night 0.71
+#   context_precision mean 0.90, worst night 0.75
+#   context_recall    mean 0.77, worst night 0.50 (4 nights)
+# The 0.5 recall nights all contained the known-weak multi-paper questions (cross-1, cross-2) or the
+# RAG-Sequence/Token retrieval gap (rag-1, rag-2). With 4 questions a night, one weak question moves the
+# mean by 0.25, so floors sit just below the worst observed night: they catch real regressions instead of
+# re-flagging known gaps. Per-question scores are now saved in each report for per-question baselines.
+# Checked by the nightly RAGAS run (`ragas_eval --rotate 4`); it also FAILS if a metric was scored on too
+# few samples rather than passing on a lucky small sample.
 decline_rate_unanswerable: 0.8
 false_decline_rate_answerable: 0.25   # a MAXIMUM, not a minimum
-faithfulness: 0.70
-context_recall: 0.60
+faithfulness: 0.65
+answer_relevancy: 0.65
+context_precision: 0.70
+context_recall: 0.45

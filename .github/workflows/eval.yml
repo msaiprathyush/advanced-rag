@@ -52,7 +52,8 @@ jobs:
         uses: actions/cache@v4
         with:
           path: .cache/pdfs
-          key: pdfs-${{ hashFiles('evals/pinned_papers.txt') }}
+          # v2: the cache now also holds paper metadata, so CI makes no arXiv requests on a hit.
+          key: pdfs-v2-${{ hashFiles('evals/pinned_papers.txt') }}
 
       - name: Build hermetic eval index
         run: uv run python -m advanced_rag.ingestion --ids-file evals/pinned_papers.txt

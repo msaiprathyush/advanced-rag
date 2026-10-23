@@ -38,7 +38,9 @@ class RetrievalResult:
 @lru_cache
 def _cross_encoder() -> TextCrossEncoder:
     s = get_settings()
-    return TextCrossEncoder(s.rerank_model, cache_dir=s.fastembed_cache_path)
+    return TextCrossEncoder(
+        s.rerank_model, cache_dir=s.fastembed_cache_path, local_files_only=s.models_local_only
+    )
 
 
 def _to_chunks(points) -> list[RetrievedChunk]:

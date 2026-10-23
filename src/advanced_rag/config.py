@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     sparse_model: str = "Qdrant/bm25"
     rerank_model: str = "Xenova/ms-marco-MiniLM-L-6-v2"
     fastembed_cache_path: str | None = None
+    # Production image: models are baked in, so never contact Hugging Face at startup. Without this,
+    # fastembed checks the Hub first and crashes the container if the Hub is slow or unreachable.
+    models_local_only: bool = False
 
     # --- LLMs (Groq) ---
     generator_model: str = "openai/gpt-oss-120b"
